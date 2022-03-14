@@ -2,6 +2,7 @@ mod cli;
 mod chunk;
 mod disassemble;
 mod value;
+mod vm;
 
 use std::path::Path;
 
