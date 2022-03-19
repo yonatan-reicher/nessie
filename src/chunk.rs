@@ -13,8 +13,13 @@ type ConstantIndex = u16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Instruction {
+    /// Marks the end of a function's execution.
     Return,
+    /// Pushes a constant value onto the stack from the constant pool.
     Constant(ConstantIndex),
+    // Integer arithmetic instructions.
+    Neg,
+    Add, Sub, Mul, Div, Mod,
 }
 
 

@@ -20,6 +20,12 @@ pub enum Command {
     Run {
         file_path: PathBuf,
     },
+    #[clap(about = "Start a Read-Eval-Print Loop")]
+    Repl,
+    #[clap(about = "Dissassemble a program")]
+    Disassemble {
+        file_path: PathBuf,
+    },
 }
 
 
