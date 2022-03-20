@@ -1,10 +1,12 @@
 use crate::ast::*;
 use crate::chunk::{Chunk, Instruction};
+use crate::value::Value;
 
 
 fn unary_op_instruction(op: UnaryOp) -> Instruction {
     match op {
         UnaryOp::Neg => Instruction::Neg,
+        UnaryOp::Not => Instruction::Not,
     }
 }
 
@@ -15,6 +17,9 @@ fn binary_op_instruction(op: BinaryOp) -> Instruction {
         BinaryOp::Mul => Instruction::Mul,
         BinaryOp::Div => Instruction::Div,
         BinaryOp::Mod => Instruction::Mod,
+        BinaryOp::Or => Instruction::Or,
+        BinaryOp::And => Instruction::And,
+        BinaryOp::Xor => Instruction::Xor,
     }
 }
 
@@ -28,8 +33,12 @@ pub fn compile(program: &Program) -> Chunk {
 
 pub fn emit_expr(expr: &Expr, chunk: &mut Chunk) {
     match &expr.kind {
-        &ExprKind::Int(i) => {
-            let constant = chunk.write_constant(i);
+        &ExprKind::Int(int) => {
+            let constant = chunk.write_constant(Value { int });
+            chunk.write(Instruction::Constant(constant), expr.span.start.line);
+        }
+        &ExprKind::Bool(bool) => {
+            let constant = chunk.write_constant(Value { bool });
             chunk.write(Instruction::Constant(constant), expr.span.start.line);
         }
         ExprKind::Paren(e) => {

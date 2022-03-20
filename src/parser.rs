@@ -183,7 +183,7 @@ impl<'a> Parser<'a> {
     fn parse_atom(&mut self) -> Result<Option<Expr>, ()> {
         let start = self.index;
         match try_kind(self.tokens.get(self.index)) {
-            Some(&TokenKind::Int(i)) => {
+            Some(&TokenKind::IntLiteral(i)) => {
                 self.index += 1;
                 Ok(Some(self.make_expr(start, ExprKind::Int(i))))
             }

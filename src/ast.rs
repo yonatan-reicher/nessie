@@ -21,6 +21,8 @@ pub struct Expr {
 pub enum ExprKind {
     /// An integer literal
     Int(i32),
+    /// A boolean literal
+    Bool(bool),
     /// A binary operator expression.
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     /// A unary operator expression.
@@ -36,21 +38,26 @@ pub enum BinaryOp {
     Mul,
     Div,
     Mod,
+    And,
+    Or,
+    Xor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     Neg,
+    Not,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeExpr {
-    pub ty: TypeKind,
+    pub ty: TypeExprKind,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TypeKind {
+pub enum TypeExprKind {
     Int,
+    Bool,
 }
 

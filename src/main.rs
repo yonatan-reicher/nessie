@@ -1,6 +1,7 @@
 mod lexer;
 mod parser;
 mod ast;
+mod typecheck;
 mod codegen;
 mod value;
 mod chunk;
@@ -87,7 +88,7 @@ fn run_file(file_path: &Path) -> io::Result<()> {
     let result = interpret(&source, &mut vm);
     match result {
         Ok(Some(value)) => {
-            println!("{}", value);
+            println!("{:?}", value);
         }
         Ok(None) => {
             println!("No value returned");
@@ -118,7 +119,7 @@ fn repl() -> io::Result<()> {
 
         match interpret(input, &mut vm) {
             Ok(Some(value)) => {
-                println!("{}", value);
+                println!("{:?}", value);
             }
             Ok(None) => { }
             Err(err) => {

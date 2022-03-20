@@ -20,6 +20,9 @@ pub enum Instruction {
     // Integer arithmetic instructions.
     Neg,
     Add, Sub, Mul, Div, Mod,
+    // Boolean arithmetic instructions
+    Not,
+    And, Or, Xor,
 }
 
 

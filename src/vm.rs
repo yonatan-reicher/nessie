@@ -39,11 +39,22 @@ impl VM {
     /// Executes a single instruction.
     pub fn run_single(&mut self, instruction: Instruction, chunk: &Chunk, ip: &mut usize) {
         macro_rules! binary_operation {
-            ($x: tt) => ( {
-                let b = self.stack.pop().unwrap();
-                let a = self.stack.pop().unwrap();
-                self.stack.push(a $x b);
-            } )
+            ($x: tt, $field:ident, $return_field:ident) => {{
+                unsafe {
+                    let b = self.stack.pop().unwrap().$field;
+                    let a = self.stack.pop().unwrap().$field;
+                    self.stack.push(Value { $return_field: a $x b });
+                }
+            }}
+        }
+
+        macro_rules! unary_operation {
+            ($x: tt, $field:ident, $return_field:ident) => {{
+                unsafe {
+                    let a = self.stack.pop().unwrap().$field;
+                    self.stack.push(Value { $return_field: $x a });
+                }
+            }}
         }
 
         // execute the instruction
@@ -54,17 +65,20 @@ impl VM {
             }
             Instruction::Return => {
                 let value = self.stack.pop().unwrap();
-                println!("{}", value);
+                println!("{:?}", value);
             }
-            Instruction::Add => binary_operation!(+),
-            Instruction::Sub => binary_operation!(-),
-            Instruction::Mul => binary_operation!(*),
-            Instruction::Div => binary_operation!(/),
-            Instruction::Mod => binary_operation!(%),
-            Instruction::Neg => {
-                let value = self.stack.pop().unwrap();
-                self.stack.push(-value);
-            }
+            // int operations
+            Instruction::Add => binary_operation!(+, int, int),
+            Instruction::Sub => binary_operation!(-, int, int),
+            Instruction::Mul => binary_operation!(*, int, int),
+            Instruction::Div => binary_operation!(/, int, int),
+            Instruction::Mod => binary_operation!(%, int, int),
+            Instruction::Neg => unary_operation!(-, int, int),
+            // bool operations
+            Instruction::And => binary_operation!(&, bool, bool),
+            Instruction::Or => binary_operation!(|, bool, bool),
+            Instruction::Xor => binary_operation!(^, bool, bool),
+            Instruction::Not => unary_operation!(!, bool, bool),
         }
         *ip += 1;
 
@@ -78,7 +92,7 @@ impl VM {
                     if i > 0 {
                         s.push_str(", ");
                     }
-                    s.push_str(&value.to_string());
+                    s.push_str(&format!("{:?}", value));
                 }
                 s.push_str("]");
                 s

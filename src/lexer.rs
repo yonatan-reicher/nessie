@@ -85,6 +85,12 @@ make_token_kind! {
     In in,
     If if,
     Else else,
+    And and,
+    Or or,
+    Xor xor,
+    Not not,
+    Int int,
+    Bool bool,
     -----
     LeftParen '(',
     RightParen ')',
@@ -102,8 +108,7 @@ make_token_kind! {
     Percent '%',
     Tilde '~',
     Question '?',
-    And '&',
-    Or '|',
+    Pipe '|',
     Caret '^',
     Ampersand '&',
     -----
@@ -118,7 +123,7 @@ make_token_kind! {
     Greater ">",
     Lesser "<",
     -----
-    Int i32,
+    IntLiteral i32,
     String String,
     Identifier Identifier,
 }
@@ -193,7 +198,7 @@ impl<'a> Lexer<'a> {
 
         if let Some(c) = self.current_char() {
             if let Some(integer) = self.advance_int_literal()? {
-                Ok(Some(self.make_token(start, TokenKind::Int(integer))))
+                Ok(Some(self.make_token(start, TokenKind::IntLiteral(integer))))
             } else if let Some(kind) = TokenKind::from_single_char_token(c) {
                 self.advance_char();
                 Ok(Some(self.make_token(start, kind)))
