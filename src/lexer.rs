@@ -131,7 +131,7 @@ enum NumberLiteral {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Identifier {}
+struct Identifier(String);
 
 pub struct Lexer<'a> {
     source: &'a str,
@@ -199,6 +199,14 @@ impl<'a> Lexer<'a> {
                 Ok(Some(self.make_token(start, kind)))
             } else if let Some((kind, len)) = TokenKind::from_multi_char_token(self.rest()) {
                 self.advance_bytes(len);
+                Ok(Some(self.make_token(start, kind)))
+            } else if let Some(identifier) = self.advance_identifier() {
+                let kind = {
+                    TokenKind::from_keyword(&identifier)
+                    .unwrap_or_else(|| {
+                        TokenKind::Identifier(Identifier(identifier.to_string()))
+                    })
+                };
                 Ok(Some(self.make_token(start, kind)))
             } else {
                 Err(LexError::InvalidCharacter(c))
