@@ -91,6 +91,8 @@ make_token_kind! {
     Not not,
     Int int,
     Bool bool,
+    True true,
+    False false,
     -----
     LeftParen '(',
     RightParen ')',

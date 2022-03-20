@@ -21,8 +21,10 @@ pub struct Expr {
 pub enum ExprKind {
     /// An integer literal
     Int(i32),
-    /// A boolean literal
-    Bool(bool),
+    /// A boolean true literal
+    True,
+    /// A boolean false literal
+    False,
     /// A binary operator expression.
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     /// A unary operator expression.

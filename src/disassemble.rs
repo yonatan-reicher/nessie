@@ -2,19 +2,19 @@ use std::io::{self, Write};
 use crate::chunk::Chunk;
 
 
-pub fn disassamble<W>(out: &mut W, chunk: &Chunk, name: &str) -> io::Result<()>
+pub fn disassamble<W>(mut out: W, chunk: &Chunk, name: &str) -> io::Result<()>
 where W: Write {
     writeln!(out, "== {} ==", name)?;
     
     let mut offset = 0;
     while offset < chunk.instructions().len() {
-        disassamble_instruction(out, chunk, offset, "")?;
+        disassamble_instruction(&mut out, chunk, offset, "")?;
         offset += 1;
     }
     Ok(())
 }
 
-pub fn disassamble_instruction<W>(out: &mut W, chunk: &Chunk, offset: usize, more: &str)
+pub fn disassamble_instruction<W>(mut out: W, chunk: &Chunk, offset: usize, more: &str)
 -> io::Result<()> where W: Write {
     let line_string = {
         let lines = chunk.instruction_lines();

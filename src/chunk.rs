@@ -17,6 +17,10 @@ pub enum Instruction {
     Return,
     /// Pushes a constant value onto the stack from the constant pool.
     Constant(ConstantIndex),
+    /// Pushes a true value onto the stack.
+    True,
+    /// Pushes a false value onto the stack.
+    False,
     // Integer arithmetic instructions.
     Neg,
     Add, Sub, Mul, Div, Mod,

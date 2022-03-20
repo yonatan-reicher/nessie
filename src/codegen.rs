@@ -37,9 +37,11 @@ pub fn emit_expr(expr: &Expr, chunk: &mut Chunk) {
             let constant = chunk.write_constant(Value { int });
             chunk.write(Instruction::Constant(constant), expr.span.start.line);
         }
-        &ExprKind::Bool(bool) => {
-            let constant = chunk.write_constant(Value { bool });
-            chunk.write(Instruction::Constant(constant), expr.span.start.line);
+        ExprKind::True => {
+            chunk.write(Instruction::True, expr.span.start.line);
+        }
+        ExprKind::False => {
+            chunk.write(Instruction::False, expr.span.start.line);
         }
         ExprKind::Paren(e) => {
             emit_expr(&e, chunk)

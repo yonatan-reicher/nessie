@@ -77,8 +77,9 @@ fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Precedence {
     // Precedence from lowest to highest.
-    Or,             // ||
-    And,            // &&
+    Or,             // or
+    Xor,            // xor
+    And,            // and
     Equality,       // == !=
     Comparison,     // < > <= >=
     Term,           // + -
@@ -101,7 +102,8 @@ impl Precedence {
         use Precedence::*;
 
         match self {
-            Or => And,
+            Or => Xor,
+            Xor => And,
             And => Equality,
             Equality => Comparison,
             Comparison => Term,
@@ -119,6 +121,7 @@ impl Precedence {
 
         match self {
             Or => Left,
+            Xor => Left,
             And => Left,
             Equality => Left,
             Comparison => Left,
@@ -143,6 +146,9 @@ fn get_binary_operator(token: &Token)
         Star => Some((Factor, Mul)),
         Slash => Some((Factor, Div)),
         Percent => Some((Factor, Mod)),
+        TokenKind::And => Some((Precedence::And, BinaryOp::And)),
+        TokenKind::Or => Some((Precedence::Or, BinaryOp::Or)),
+        TokenKind::Xor => Some((Precedence::Xor, BinaryOp::Xor)),
         _ => None,
     }
 }
@@ -186,6 +192,14 @@ impl<'a> Parser<'a> {
             Some(&TokenKind::IntLiteral(i)) => {
                 self.index += 1;
                 Ok(Some(self.make_expr(start, ExprKind::Int(i))))
+            }
+            Some(TokenKind::True) => {
+                self.index += 1;
+                Ok(Some(self.make_expr(start, ExprKind::True)))
+            }
+            Some(TokenKind::False) => {
+                self.index += 1;
+                Ok(Some(self.make_expr(start, ExprKind::False)))
             }
             Some(&TokenKind::LeftParen) => {
                 self.index += 1;

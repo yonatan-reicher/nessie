@@ -63,6 +63,12 @@ impl VM {
                 let value = chunk.constants()[constant as usize];
                 self.stack.push(value);
             }
+            Instruction::True => {
+                self.stack.push(Value { boolean: true });
+            }
+            Instruction::False => {
+                self.stack.push(Value { boolean: false });
+            }
             Instruction::Return => {
                 let value = self.stack.pop().unwrap();
                 println!("{:?}", value);
@@ -75,10 +81,10 @@ impl VM {
             Instruction::Mod => binary_operation!(%, int, int),
             Instruction::Neg => unary_operation!(-, int, int),
             // bool operations
-            Instruction::And => binary_operation!(&, bool, bool),
-            Instruction::Or => binary_operation!(|, bool, bool),
-            Instruction::Xor => binary_operation!(^, bool, bool),
-            Instruction::Not => unary_operation!(!, bool, bool),
+            Instruction::And => binary_operation!(&&, boolean, boolean),
+            Instruction::Or => binary_operation!(||, boolean, boolean),
+            Instruction::Xor => binary_operation!(^, boolean, boolean),
+            Instruction::Not => unary_operation!(!, boolean, boolean),
         }
         *ip += 1;
 
@@ -107,26 +113,37 @@ impl VM {
 mod tests {
     use super::*;
 
+    /// This should be used instead of writing to stdout directly,
+    /// because while println! are captured by the test runner,
+    /// stdout is not.
+    fn disassamble(chunk: &Chunk, name: &str) {
+        use crate::disassemble::disassamble;
+        
+        let mut stream = Vec::new();
+        disassamble(&mut stream, chunk, name).unwrap();
+        println!("{}", String::from_utf8(stream).unwrap());
+    }
+
     #[test]
     fn test_push_constant() {
         let mut chunk = Chunk::new();
-        let num_index = chunk.write_constant(1);
+        let num_index = chunk.write_constant(Value { int: 1 });
         chunk.write(Instruction::Constant(num_index), 0);
 
         let mut vm = VM::new();
         vm.run(&chunk);
      
-        assert_eq!(vm.stack.pop(), Some(1));
-        assert_eq!(vm.stack.pop(), None);
+        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 1) };
+        assert_eq!(vm.stack.len(), 0);
     }
 
     #[test]
     fn simple_arithmetic() {
         let mut chunk = Chunk::new();
-        let num_1_index = chunk.write_constant(14);
-        let num_2_index = chunk.write_constant(5);
-        let num_3_index = chunk.write_constant(3);
-        let num_4_index = chunk.write_constant(9);
+        let num_1_index = chunk.write_constant(Value { int: 14 });
+        let num_2_index = chunk.write_constant(Value { int: 5 });
+        let num_3_index = chunk.write_constant(Value { int: 3 });
+        let num_4_index = chunk.write_constant(Value { int: 9 });
         chunk.write(Instruction::Constant(num_1_index), 110);
         chunk.write(Instruction::Constant(num_2_index), 110);
         chunk.write(Instruction::Add, 111);
@@ -135,11 +152,13 @@ mod tests {
         chunk.write(Instruction::Constant(num_4_index), 114);
         chunk.write(Instruction::Sub, 115);
 
+        disassamble(&chunk, "simple_arithmetic");
+
         let mut vm = VM::new();
         vm.run(&chunk);
 
-        assert_eq!(vm.stack.pop(), Some(-3));
-        assert_eq!(vm.stack.pop(), None);
+        unsafe { assert_eq!(vm.stack.pop().unwrap().int, -3) };
+        assert_eq!(vm.stack.len(), 0);
     }
 }
 
