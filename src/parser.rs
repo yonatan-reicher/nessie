@@ -5,37 +5,50 @@ use crate::ast::*;
 
 
 #[derive(Debug)]
-pub enum ParseError {
-    ExpectedExpression(usize),
-    ExpectedExpressionAtom(usize),
-    ExpectedEndOfProgram(usize),
-    UnclosedDelimiter {
-        delimiter_index: usize,
-        index: usize,
-    },
+pub enum ParseErrorKind {
+    ExpectedExpression,
+    ExpectedExpressionAtom,
+    ExpectedEndOfProgram,
+    UnclosedDelimiter,
 }
 
-impl std::fmt::Display for ParseError {
+impl std::fmt::Display for ParseErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ParseError::*;
+        use ParseErrorKind::*;
         match self {
-            ExpectedExpression(index) => {
-                write!(f, "Expected expression at index {}", index)
+            ExpectedExpression => {
+                write!(f, "Expected expression")
             }
-            ExpectedExpressionAtom(index) => {
-                write!(f, "Expected expression atom at index {}", index)
+            ExpectedExpressionAtom => {
+                write!(f, "Expected expression atom")
             }
-            ExpectedEndOfProgram(index) => {
-                write!(f, "Expected end of program at index {}", index)
+            ExpectedEndOfProgram => {
+                write!(f, "Expected end of program")
             }
-            UnclosedDelimiter { delimiter_index, index } => {
-                write!(f, "Unclosed delimiter at index {} (delimiter at index {})", index, delimiter_index)
+            UnclosedDelimiter => {
+                write!(f, "Unclosed delimiter")
             }
         }
     }
 }
 
-impl std::error::Error for ParseError {}
+#[derive(Debug)]
+pub struct ParseError {
+    pub kind: ParseErrorKind,
+    pub span: Span,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "line {} col {} to line {} col {}: {}",
+            self.span.start.line, self.span.start.column,
+            self.span.end.line, self.span.end.column,
+            self.kind,
+        )
+    }
+}
+
+impl std::error::Error for ParseErrorKind {}
 
 pub fn parse<'a>(tokens: &[Token]) -> Result<Program, Vec<ParseError>> {
     let mut parser = Parser {
@@ -135,21 +148,36 @@ fn get_binary_operator(token: &Token)
 }
 
 impl<'a> Parser<'a> {
+    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
+        let max_index = self.tokens.len() - 1;
+        let start = self.tokens[start_index.clamp(0, max_index)].span.start;
+        let end = self.tokens[(self.index - 1).clamp(0, max_index)].span.end;
+        let span = Span { start, end };
+        Expr { span, kind, ty: None }
+    }
+
+    fn make_error(&mut self, kind: ParseErrorKind, start: usize, end: usize) {
+        let max_index = self.tokens.len() - 1;
+        let start = self.tokens[start.clamp(0, max_index)].span.start;
+        let end = self.tokens[end.clamp(0, max_index)].span.end;
+        let span = Span { start, end };
+        self.errors.push(ParseError {
+            kind,
+            span,
+        });
+    }
+
     pub fn parse_program(&mut self) -> Result<Program, ()> {
         let body = self.parse_expr()?;
         if self.index < self.tokens.len() {
-            self.errors.push(ParseError::ExpectedEndOfProgram(self.index));
+            self.make_error(
+                ParseErrorKind::ExpectedEndOfProgram, 
+                self.index, self.tokens.len() - 1
+            );
         }
         Ok(Program {
             body,
         })
-    }
-
-    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
-        let start = self.tokens[start_index].span.start;
-        let end = self.tokens[self.index - 1].span.end;
-        let span = Span { start, end };
-        Expr { span, kind, ty: None }
     }
 
     fn parse_atom(&mut self) -> Result<Option<Expr>, ()> {
@@ -163,10 +191,10 @@ impl<'a> Parser<'a> {
                 self.index += 1;
                 let expr = self.parse_expr();
                 if try_kind(self.tokens.get(self.index)) != Some(&TokenKind::RightParen) {
-                    self.errors.push(ParseError::UnclosedDelimiter {
-                        delimiter_index: start,
-                        index: self.index,
-                    })
+                    self.make_error(
+                        ParseErrorKind::UnclosedDelimiter,
+                        start, start,
+                    );
                 }
                 self.index += 1;
                 expr.map(Some)
@@ -180,7 +208,10 @@ impl<'a> Parser<'a> {
                         Ok(Some(self.make_expr(start, kind)))
                     }
                     Ok(None) => {
-                        self.errors.push(ParseError::ExpectedExpressionAtom(self.index));
+                        self.make_error(
+                            ParseErrorKind::ExpectedExpressionAtom,
+                            start, self.index,
+                        );
                         Err(())
                     }
                     Err(()) => Err(()),
@@ -196,7 +227,10 @@ impl<'a> Parser<'a> {
             return match atom {
                 Some(atom) => Ok(atom),
                 None => {
-                    self.errors.push(ParseError::ExpectedExpressionAtom(self.index));
+                    self.make_error(
+                        ParseErrorKind::ExpectedExpressionAtom,
+                        self.index, self.index,
+                    );
                     Err(())
                 }
             };
@@ -227,7 +261,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ()> {
-        self.parse_precedence(Precedence::LOWEST)
+        let start = self.index;
+        let res = self.parse_precedence(Precedence::LOWEST);
+        if res.is_err() {
+            self.make_error(
+                ParseErrorKind::ExpectedExpression,
+                start, self.index,
+            );
+        }
+        res
     }
 }
 
