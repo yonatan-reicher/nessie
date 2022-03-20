@@ -197,7 +197,10 @@ impl<'a> Parser<'a> {
                     );
                 }
                 self.index += 1;
-                expr.map(Some)
+                expr.map(|expr| {
+                    let kind = ExprKind::Paren(Box::new(expr));
+                    Some(self.make_expr(start, kind))
+                })
             }
             Some(&TokenKind::Minus) => {
                 self.index += 1;
