@@ -3,6 +3,8 @@
 //! source code and potentially contains semantic information.
 
 use crate::lexer::Span;
+use crate::r#type::Type;
+use std::rc::Rc;
 
 
 #[derive(Debug)]
@@ -14,7 +16,7 @@ pub struct Program {
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
-    pub ty: Option<TypeExpr>,
+    pub ty: Option<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

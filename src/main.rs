@@ -4,6 +4,7 @@ mod ast;
 mod typecheck;
 mod codegen;
 mod value;
+mod r#type;
 mod chunk;
 mod vm;
 mod disassemble;
@@ -16,6 +17,7 @@ use std::error;
 use vm::VM;
 use lexer::{lex, LexError};
 use parser::{parse, ParseError};
+use typecheck::{typecheck, TypeError};
 use codegen::compile;
 use value::Value;
 
@@ -25,21 +27,29 @@ enum Error {
     Io(io::Error),
     Lex(LexError),
     Parse(Vec<ParseError>),
+    Type(Vec<TypeError>),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match *self {
-            Error::Io(ref err) => {
+        match self {
+            Error::Io(err) => {
                 write!(f, "IO error: {}", err)
             }
-            Error::Lex(ref err) => {
+            Error::Lex(err) => {
                 write!(f, "Lex error: {}", err)
             }
-            Error::Parse(ref err) => {
-                write!(f, "Parse errors:")?;
+            Error::Parse(err) => {
+                writeln!(f, "Parse errors:")?;
                 for e in err {
-                    write!(f, "\n  {}", e)?;
+                    writeln!(f, "  {}", e)?;
+                }
+                Ok(())
+            }
+            Error::Type(errors) => {
+                writeln!(f, "Type checking errors:")?;
+                for e in errors {
+                    writeln!(f, "  {}", e)?;
                 }
                 Ok(())
             }
@@ -70,7 +80,8 @@ fn main() -> io::Result<()> {
 
 fn interpret(input: &str, vm: &mut VM) -> Result<Option<Value>, Error> {
     let tokens = lex(input).map_err(Error::Lex)?;
-    let ast = parse(&tokens).map_err(Error::Parse)?;
+    let mut ast = parse(&tokens).map_err(Error::Parse)?;
+    typecheck(&mut ast).map_err(Error::Type)?;
     let chunk = compile(&ast);
 
     vm.stack.clear();
