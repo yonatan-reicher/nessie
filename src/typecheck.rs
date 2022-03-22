@@ -106,7 +106,7 @@ impl Env {
 
     pub fn typecheck(mut self, program: &mut Program)
     -> Result<(), Vec<TypeError>> {
-        self.visit(&mut program.body);
+        let _ = self.visit(&mut program.body);
 
         if program.body.ty.is_none() {
             self.errors.push(TypeError {
