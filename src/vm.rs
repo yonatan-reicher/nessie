@@ -85,6 +85,15 @@ impl VM {
             Instruction::Or => binary_operation!(||, boolean, boolean),
             Instruction::Xor => binary_operation!(^, boolean, boolean),
             Instruction::Not => unary_operation!(!, boolean, boolean),
+            // comparison operations
+            Instruction::IntEq => binary_operation!(==, int, boolean),
+            Instruction::BoolEq => binary_operation!(==, boolean, boolean),
+            Instruction::IntNe => binary_operation!(!=, int, boolean),
+            Instruction::BoolNe => binary_operation!(!=, boolean, boolean),
+            Instruction::Lt => binary_operation!(<, int, boolean),
+            Instruction::Le => binary_operation!(<=, int, boolean),
+            Instruction::Gt => binary_operation!(>, int, boolean),
+            Instruction::Ge => binary_operation!(>=, int, boolean),
         }
         *ip += 1;
 

@@ -27,6 +27,10 @@ pub enum Instruction {
     // Boolean arithmetic instructions
     Not,
     And, Or, Xor,
+    // Comparison instructions
+    Lt, Gt, Le, Ge,
+    IntEq, IntNe,
+    BoolEq, BoolNe,
 }
 
 

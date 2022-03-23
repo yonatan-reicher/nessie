@@ -1,6 +1,6 @@
 //! This module contains the parser for the language.
 
-use crate::lexer::{Token, TokenKind, Position, Span};
+use crate::lexer::{Token, TokenKind, Span};
 use crate::ast::*;
 
 
@@ -89,12 +89,6 @@ enum Precedence {
     Atom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Associativity {
-    Left,
-    Right,
-}
-
 impl Precedence {
     const LOWEST: Precedence = Precedence::Or;
 
@@ -114,24 +108,6 @@ impl Precedence {
             Atom => Atom,
         }
     }
-
-    fn associativity(self) -> Associativity {
-        use Precedence::*;
-        use Associativity::{Left, Right};
-
-        match self {
-            Or => Left,
-            Xor => Left,
-            And => Left,
-            Equality => Left,
-            Comparison => Left,
-            Term => Left,
-            Factor => Left,
-            Unary => Right,
-            Call => Left,
-            Atom => Left,
-        }
-    }
 }
 
 fn get_binary_operator(token: &Token)
@@ -140,7 +116,7 @@ fn get_binary_operator(token: &Token)
     use BinaryOp::*;
     use Precedence::*;
 
-    match token.kind {
+    match &token.kind {
         Plus => Some((Term, Add)),
         Minus => Some((Term, Sub)),
         Star => Some((Factor, Mul)),
@@ -149,6 +125,12 @@ fn get_binary_operator(token: &Token)
         TokenKind::And => Some((Precedence::And, BinaryOp::And)),
         TokenKind::Or => Some((Precedence::Or, BinaryOp::Or)),
         TokenKind::Xor => Some((Precedence::Xor, BinaryOp::Xor)),
+        EqualEqual => Some((Equality, BinaryOp::Eq)),
+        BangEqual => Some((Equality, BinaryOp::Ne)),
+        Lesser => Some((Comparison, BinaryOp::Lt)),
+        Greater => Some((Comparison, BinaryOp::Gt)),
+        LesserEqual => Some((Comparison, BinaryOp::Le)),
+        GreaterEqual => Some((Comparison, BinaryOp::Ge)),
         _ => None,
     }
 }
@@ -270,7 +252,7 @@ impl<'a> Parser<'a> {
 
             // for now only allow left associativity
             let right = self.parse_precedence(precedence.next())?;
-            let kind = ExprKind::BinaryOp(op, Box::new(ret), Box::new(right));
+            let kind = ExprKind::Binary(op, Box::new(ret), Box::new(right));
             ret = self.make_expr(start, kind);
         }
 
@@ -294,7 +276,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexer;
+    use crate::lexer::{Lexer, Position};
 
     fn lex(input: &str) -> Vec<Token> {
         let mut ret = Vec::new();
@@ -333,7 +315,7 @@ mod tests {
                     start: Position { line: 1, column: 1 },
                     end: Position { line: 1, column: 6 },
                 },
-                kind: ExprKind::BinaryOp(
+                kind: ExprKind::Binary(
                     BinaryOp::Add,
                     Box::new(Expr {
                         span: Span {

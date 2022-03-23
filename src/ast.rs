@@ -4,7 +4,6 @@
 
 use crate::lexer::Span;
 use crate::r#type::Type;
-use std::rc::Rc;
 
 
 #[derive(Debug)]
@@ -28,7 +27,7 @@ pub enum ExprKind {
     /// A boolean false literal
     False,
     /// A binary operator expression.
-    BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
     /// A unary operator expression.
     Unary(UnaryOp, Box<Expr>),
     /// An expression wrapped in parentheses.
@@ -37,19 +36,19 @@ pub enum ExprKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    And,
-    Or,
-    Xor,
+    // Int operators
+    Add, Sub, Mul, Div, Mod,
+    // Boolean operators
+    And, Or, Xor,
+    // Comparison operators
+    Eq, Ne, Lt, Le, Gt, Ge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
+    // Int operators
     Neg,
+    // Boolean operators
     Not,
 }
 
