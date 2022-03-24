@@ -8,8 +8,8 @@ use string_intern::StringInterner;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 
-pub struct Lexer<'a> {
-    source: &'a str,
+pub struct Lexer<'source> {
+    source: &'source str,
     /// The current position of the lexer in the source code.
     position: Position,
     /// The current line of the lexer in the source code.
@@ -34,8 +34,8 @@ impl Display for LexErrorKind {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         use LexErrorKind::*;
         match self {
-            InvalidCharacter(c) => write!(f, "invalid character: {}", c),
-            UnterminatedString => write!(f, "unterminated string"),
+            InvalidCharacter(c) => write!(f, "Invalid character: {}", c),
+            UnterminatedString => write!(f, "Unterminated string"),
         }
     }
 }
@@ -73,8 +73,8 @@ pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
     Ok(tokens)
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str) -> Lexer<'a> {
+impl<'source> Lexer<'source> {
+    pub fn new(source: &'source str) -> Lexer<'source> {
         Lexer {
             source,
             position: 0,
@@ -136,7 +136,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn advance_string_literal(&mut self) -> Result<Option<&'a str>, LexError> {
+    fn advance_string_literal(&mut self) -> Result<Option<&'source str>, LexError> {
         if let Some(quote @ ('"' | '\'')) = self.current_char() {
             self.advance_char();
             let start = self.position;
@@ -163,7 +163,7 @@ impl<'a> Lexer<'a> {
         } 
     }
 
-    fn advance_identifier(&mut self) -> Option<&'a str> {
+    fn advance_identifier(&mut self) -> Option<&'source str> {
         if is_ident_start(self.current_char()?) {
             let start = self.position;
             while self.current_char().map(is_ident_char).unwrap_or(false) {

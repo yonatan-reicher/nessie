@@ -22,12 +22,12 @@ impl std::fmt::Display for TypeErrorKind {
         match self {
             OperatorTypeMissmatch { expected, found } => {
                 write!(f,
-                    "operator argument should have type {} but had type {}",
+                    "Operator argument should have type {} but had type {}",
                     expected, found,
                 )
             }
             ProgramTypeUnknown => {
-                write!(f, "the program's type could not be infered")
+                write!(f, "The program's type could not be infered")
             }
         }
     }
