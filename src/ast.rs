@@ -2,7 +2,7 @@
 //! The AST is a tree-like structure that represents the structure of the
 //! source code and potentially contains semantic information.
 
-use crate::lexer::Span;
+use crate::token::Span;
 use crate::r#type::Type;
 
 

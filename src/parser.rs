@@ -1,7 +1,9 @@
 //! This module contains the parser for the language.
 
-use crate::lexer::{Token, TokenKind, Span};
+use crate::token::prelude::*;
 use crate::ast::*;
+use crate::source_error::SourceError;
+use std::fmt::{self, Display, Formatter};
 
 
 #[derive(Debug)]
@@ -16,18 +18,10 @@ impl std::fmt::Display for ParseErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ParseErrorKind::*;
         match self {
-            ExpectedExpression => {
-                write!(f, "Expected expression")
-            }
-            ExpectedExpressionAtom => {
-                write!(f, "Expected expression atom")
-            }
-            ExpectedEndOfProgram => {
-                write!(f, "Expected end of program")
-            }
-            UnclosedDelimiter => {
-                write!(f, "Unclosed delimiter")
-            }
+            ExpectedExpression => write!(f, "Expected expression"),
+            ExpectedExpressionAtom => write!(f, "Expected expression atom"),
+            ExpectedEndOfProgram => write!(f, "Expected end of program"),
+            UnclosedDelimiter => write!(f, "Unclosed delimiter"),
         }
     }
 }
@@ -38,17 +32,20 @@ pub struct ParseError {
     pub span: Span,
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "line {} col {} to line {} col {}: {}",
-            self.span.start.line, self.span.start.column,
-            self.span.end.line, self.span.end.column,
-            self.kind,
-        )
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.kind)
     }
 }
 
-impl std::error::Error for ParseErrorKind {}
+impl std::error::Error for ParseError {}
+
+impl SourceError for ParseError {
+    fn get_span(&self) -> Span {
+        self.span
+    }
+}
+
 
 pub fn parse<'a>(tokens: &[Token]) -> Result<Program, Vec<ParseError>> {
     let mut parser = Parser {
@@ -136,19 +133,22 @@ fn get_binary_operator(token: &Token)
 }
 
 impl<'a> Parser<'a> {
-    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
+    fn span_from_token_indices(&self, start: usize, end: usize) -> Span {
         let max_index = self.tokens.len() - 1;
-        let start = self.tokens[start_index.clamp(0, max_index)].span.start;
-        let end = self.tokens[(self.index - 1).clamp(0, max_index)].span.end;
-        let span = Span { start, end };
+        let start = start.clamp(0, max_index);
+        let end = end.clamp(0, max_index);
+        let Span { start, line, .. } = self.tokens[start].span;
+        let Span { end, .. } = self.tokens[end].span;
+        Span { start, end, line }
+    }
+
+    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
+        let span = self.span_from_token_indices(start_index, self.index - 1);
         Expr { span, kind, ty: None }
     }
 
     fn make_error(&mut self, kind: ParseErrorKind, start: usize, end: usize) {
-        let max_index = self.tokens.len() - 1;
-        let start = self.tokens[start.clamp(0, max_index)].span.start;
-        let end = self.tokens[end.clamp(0, max_index)].span.end;
-        let span = Span { start, end };
+        let span = self.span_from_token_indices(start, end);
         self.errors.push(ParseError {
             kind,
             span,
@@ -276,27 +276,20 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::{Lexer, Position};
-
-    fn lex(input: &str) -> Vec<Token> {
-        let mut ret = Vec::new();
-        let mut lexer = Lexer::new(input);
-        while let Some(t) = lexer.lex_token().unwrap() {
-            ret.push(t);
-        }
-        ret
-    }
+    use crate::lexer::lex;
+    use crate::token::Span;
 
     #[test]
     fn int() {
-        let tokens = lex("123");
+        let tokens = lex("123").unwrap();
         let program = parse(&tokens).expect("failed to parse");
         assert_eq!(
             program.body,
             Expr {
                 span: Span {
-                    start: Position { line: 1, column: 1 },
-                    end: Position { line: 1, column: 4 },
+                    start: 0,
+                    end: 3,
+                    line: 0,
                 },
                 kind: ExprKind::Int(123),
                 ty: None,
@@ -306,29 +299,32 @@ mod tests {
 
     #[test]
     fn addition() {
-        let tokens = lex("1 + 2");
+        let tokens = lex("1 + 2").unwrap();
         let program = parse(&tokens).expect("failed to parse");
         assert_eq!(
             program.body,
             Expr {
                 span: Span {
-                    start: Position { line: 1, column: 1 },
-                    end: Position { line: 1, column: 6 },
+                    start: 0,
+                    end: 5,
+                    line: 0,
                 },
                 kind: ExprKind::Binary(
                     BinaryOp::Add,
                     Box::new(Expr {
                         span: Span {
-                            start: Position { line: 1, column: 1 },
-                            end: Position { line: 1, column: 2 },
+                            start: 0,
+                            end: 1,
+                            line: 0,
                         },
                         kind: ExprKind::Int(1),
                         ty: None,
                     }),
                     Box::new(Expr {
                         span: Span {
-                            start: Position { line: 1, column: 5 },
-                            end: Position { line: 1, column: 6 },
+                            start: 4,
+                            end: 5,
+                            line: 0,
                         },
                         kind: ExprKind::Int(2),
                         ty: None,

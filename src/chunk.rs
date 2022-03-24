@@ -2,9 +2,8 @@
 
 use std::fmt::Display;
 use crate::value::Value;
+use crate::token::Line;
 
-
-type LineOffset = usize;
 
 type ConstantIndex = u16;
 
@@ -45,7 +44,7 @@ impl Display for Instruction {
 /// A sequence of byte code instructions with their parameters and line numbers.
 pub struct Chunk {
     instructions: Vec<Instruction>,
-    instruction_lines: Vec<LineOffset>,
+    instruction_lines: Vec<Line>,
     constants: Vec<Value>,
 }
 
@@ -59,7 +58,7 @@ impl Chunk {
         }
     }
 
-    pub fn write(&mut self, op: Instruction, line: LineOffset) {
+    pub fn write(&mut self, op: Instruction, line: Line) {
         self.instructions.push(op);
         self.instruction_lines.push(line);
     }
@@ -74,7 +73,7 @@ impl Chunk {
         &self.instructions
     }
 
-    pub fn instruction_lines(&self) -> &[LineOffset] {
+    pub fn instruction_lines(&self) -> &[Line] {
         &self.instruction_lines
     }
 

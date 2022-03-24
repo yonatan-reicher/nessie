@@ -19,7 +19,7 @@ pub fn disassamble_instruction<W>(mut out: W, chunk: &Chunk, offset: usize, more
     let line_string = {
         let lines = chunk.instruction_lines();
         if offset == 0 || lines[offset] != lines[offset - 1] {
-            lines[offset].to_string()
+            (lines[offset] + 1).to_string()
         } else {
             "  |".to_string()
         }
@@ -59,7 +59,7 @@ mod tests {
             out,
             indoc!("
                 == test ==
-                0000  123 Return
+                0000  124 Return
                 0001    | Constant(0)
             ")
         );

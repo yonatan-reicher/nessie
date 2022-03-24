@@ -1,9 +1,10 @@
 //! This module typechecks abstract syntax trees and resolve certain things
 //! like identifiers
 
-use crate::lexer::Span;
+use crate::token::Span;
 use crate::ast::*;
 use crate::r#type::Type;
+use crate::source_error::SourceError;
 
 
 #[derive(Debug)]
@@ -21,12 +22,12 @@ impl std::fmt::Display for TypeErrorKind {
         match self {
             OperatorTypeMissmatch { expected, found } => {
                 write!(f,
-                    "Operator argument should have type {} but had type {}",
+                    "operator argument should have type {} but had type {}",
                     expected, found,
                 )
             }
             ProgramTypeUnknown => {
-                write!(f, "The program's type could not be infered")
+                write!(f, "the program's type could not be infered")
             }
         }
     }
@@ -40,16 +41,17 @@ pub struct TypeError {
 
 impl std::fmt::Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "line {} col {} to line {} col {}: {}",
-            self.span.start.line, self.span.start.column,
-            self.span.end.line, self.span.end.column,
-            self.kind
-        )
+        write!(f, "{}", self.kind)
     }
 }
 
 impl std::error::Error for TypeError { }
 
+impl SourceError for TypeError {
+    fn get_span(&self) -> Span {
+        self.span
+    }
+}
 
 pub fn typecheck(program: &mut Program) -> Result<(), Vec<TypeError>> {
     Env::new().typecheck(program)

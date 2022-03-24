@@ -47,25 +47,25 @@ pub fn emit_expr(expr: &Expr, chunk: &mut Chunk) {
     match &expr.kind {
         &ExprKind::Int(int) => {
             let constant = chunk.write_constant(Value { int });
-            chunk.write(Instruction::Constant(constant), expr.span.start.line);
+            chunk.write(Instruction::Constant(constant), expr.span.line);
         }
         ExprKind::True => {
-            chunk.write(Instruction::True, expr.span.start.line);
+            chunk.write(Instruction::True, expr.span.line);
         }
         ExprKind::False => {
-            chunk.write(Instruction::False, expr.span.start.line);
+            chunk.write(Instruction::False, expr.span.line);
         }
         ExprKind::Paren(e) => {
             emit_expr(&e, chunk)
         }
         ExprKind::Unary(op, e) => {
             emit_expr(&e, chunk);
-            chunk.write(unary_op_instruction(*op), expr.span.start.line);
+            chunk.write(unary_op_instruction(*op), expr.span.line);
         }
         ExprKind::Binary(op, l, r) => {
             emit_expr(&l, chunk);
             emit_expr(&r, chunk);
-            chunk.write(binary_op_instruction(*op, l.ty.as_ref().unwrap()), expr.span.start.line);
+            chunk.write(binary_op_instruction(*op, l.ty.as_ref().unwrap()), expr.span.line);
         }
     }
 }

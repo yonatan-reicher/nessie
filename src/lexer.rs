@@ -1,169 +1,58 @@
 //! Contains the Span, Token the Lexer types for lexing source code on demand.
 
+mod string_intern;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Span {
-    pub start: Position,
-    pub end: Position,
-}
+use crate::token::prelude::*;
+use crate::source_error::SourceError;
+use string_intern::StringInterner;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
-}
-
-impl Default for Position {
-    fn default() -> Self {
-        Self {
-            line: 1,
-            column: 1,
-        }
-    }
-}
-
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-}
-
-macro_rules! make_token_kind {
-    (
-        $($keyword:ident $keyword_ident:ident,)+
-        $(-)+
-        $($single_char_token:ident $single_char_token_char:expr,)+
-        $(-)+
-        $($multi_char_token:ident $multi_char_token_str:expr,)+
-        $(-)+
-        $($literal:ident $literal_type:ty,)+
-    ) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-        pub enum TokenKind {
-            $($keyword,)*
-            $($single_char_token,)*
-            $($multi_char_token,)*
-            $($literal($literal_type),)*
-        }
-
-        impl TokenKind {
-            pub fn from_keyword(keyword: &str) -> Option<TokenKind> {
-                match keyword {
-                    $(stringify!($keyword_ident) => {
-                        Some(TokenKind::$keyword)
-                    })*
-                    _ => None,
-                }
-            }
-
-            pub fn from_single_char_token(token: char) -> Option<TokenKind> {
-                match token {
-                    $($single_char_token_char => {
-                        Some(TokenKind::$single_char_token)
-                    })*
-                    _ => None,
-                }
-            }
-
-            pub fn from_multi_char_token(token: &str) -> Option<(TokenKind, usize)> {
-                // we only want to check the beginning of the str
-                $(if token.starts_with($multi_char_token_str) {
-                    return Some((
-                            TokenKind::$multi_char_token,
-                            $multi_char_token_str.len()
-                        ));
-                })*
-                None
-            }
-        }
-    };
-}
-
-make_token_kind! {
-    Let let,
-    In in,
-    If if,
-    Else else,
-    And and,
-    Or or,
-    Xor xor,
-    Not not,
-    Int int,
-    Bool bool,
-    True true,
-    False false,
-    -----
-    LeftParen '(',
-    RightParen ')',
-    LeftBrace '{',
-    RightBrace '}',
-    LeftBracket '[',
-    RightBracket ']',
-    Comma ',',
-    Semicolon ';',
-    Colon ':',
-    Dot '.',
-    Plus '+',
-    Star '*',
-    Slash '/',
-    Percent '%',
-    Tilde '~',
-    Question '?',
-    Pipe '|',
-    Caret '^',
-    Ampersand '&',
-    -----
-    Arrow "->",
-    Minus "-",
-    BangEqual "!=",
-    EqualEqual "==",
-    Bang "!",
-    Equal "=",
-    GreaterEqual ">=",
-    LesserEqual "<=",
-    Greater ">",
-    Lesser "<",
-    -----
-    IntLiteral i32,
-    String String,
-    Identifier Identifier,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum NumberLiteral {
-    Int(i32),
-    /// A float literal. Stored as a string because of precision loss
-    Float(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct Identifier(String);
 
 pub struct Lexer<'a> {
     source: &'a str,
-    /// The current position of the lexer as an index.
-    index: usize,
-    /// The current position of the lexer as a Position.
+    /// The current position of the lexer in the source code.
     position: Position,
+    /// The current line of the lexer in the source code.
+    line: Line,
+    /// A table of interned strings.
+    interned_strings: StringInterner,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LexError {
+#[derive(Debug)]
+pub struct LexError {
+    pub kind: LexErrorKind,
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum LexErrorKind {
     InvalidCharacter(char),
     UnterminatedString,
 }
 
-impl std::fmt::Display for LexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Display for LexErrorKind {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        use LexErrorKind::*;
         match self {
-            LexError::InvalidCharacter(c) => write!(f, "Invalid character {}", c),
-            LexError::UnterminatedString => write!(f, "Unterminated string"),
+            InvalidCharacter(c) => write!(f, "invalid character: {}", c),
+            UnterminatedString => write!(f, "unterminated string"),
         }
     }
 }
 
+impl Display for LexError {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(f, "{}", self.kind)
+    }
+}
+
 impl std::error::Error for LexError {}
+
+impl SourceError for LexError {
+    fn get_span(&self) -> Span {
+        self.span
+    }
+}
 
 
 fn is_ident_start(c: char) -> bool {
@@ -188,9 +77,21 @@ impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Lexer<'a> {
         Lexer {
             source,
-            index: 0,
-            position: Position::default(),
+            position: 0,
+            line: 0,
+            interned_strings: StringInterner::new(),
         }
+    }
+
+    fn make_error(&self, start: Position, kind: LexErrorKind) -> LexError {
+        let span = Span { start, end: self.position, line: self.line };
+        LexError { kind, span }
+    }
+
+    fn make_token(&mut self, start: Position, kind: TokenKind) -> Token {
+        let end = self.position;
+        let span = Span { start, end, line: self.line };
+        Token { kind, span }
     }
 
     pub fn lex_token(&mut self) -> Result<Option<Token>, LexError> {
@@ -211,25 +112,17 @@ impl<'a> Lexer<'a> {
                 let kind = {
                     TokenKind::from_keyword(&identifier)
                     .unwrap_or_else(|| {
-                        TokenKind::Identifier(Identifier(identifier.to_string()))
+                        let interned = self.interned_strings.intern(identifier);
+                        TokenKind::Identifier(interned)
                     })
                 };
                 Ok(Some(self.make_token(start, kind)))
             } else {
-                Err(LexError::InvalidCharacter(c))
+                self.advance_char();
+                Err(self.make_error(start, LexErrorKind::InvalidCharacter(c)))
             }
         } else {
             Ok(None)
-        }
-    }
-
-    fn make_token(&mut self, start: Position, kind: TokenKind) -> Token {
-        let end = self.position;
-        let span = Span { start, end };
-
-        Token {
-            kind,
-            span,
         }
     }
 
@@ -243,12 +136,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn advance_string_literal(&mut self) -> Result<Option<&str>, LexError> {
+    fn advance_string_literal(&mut self) -> Result<Option<&'a str>, LexError> {
         if let Some(quote @ ('"' | '\'')) = self.current_char() {
             self.advance_char();
-            let start = self.index;
-            while self.advance_char().ok_or(LexError::UnterminatedString)? != quote {}
-            Ok(Some(&self.source[start..self.index-1]))
+            let start = self.position;
+            // Advance until we find the closing quote.
+            while self.advance_char().ok_or_else(|| {
+                self.make_error(start, LexErrorKind::UnterminatedString)
+            })? != quote {}
+            Ok(Some(&self.source[start..self.position-1]))
         } else {
             Ok(None)
         }
@@ -256,78 +152,58 @@ impl<'a> Lexer<'a> {
 
     fn advance_int_literal(&mut self) -> Result<Option<i32>, LexError> {
         if let Some('0'..='9') = self.current_char() {
-            let start = self.index;
+            let start = self.position;
             while let Some('0'..='9') = self.current_char() {
                 self.advance_char();
             }
-            let value = self.source[start..self.index].parse().unwrap();
+            let value = self.source[start..self.position].parse().unwrap();
             Ok(Some(value))
         } else {
             Ok(None)
         } 
     }
 
-    fn advance_identifier(&mut self) -> Option<&str> {
+    fn advance_identifier(&mut self) -> Option<&'a str> {
         if is_ident_start(self.current_char()?) {
-            let start = self.index;
+            let start = self.position;
             while self.current_char().map(is_ident_char).unwrap_or(false) {
                 self.advance_char();
             }
-            Some(&self.source[start..self.index])
+            Some(&self.source[start..self.position])
         } else {
             None
         }
     }
 
     pub fn current_char(&self) -> Option<char> {
-        self.source[self.index..].chars().next()
+        self.source[self.position..].chars().next()
 
     }
 
     pub fn advance_char(&mut self) -> Option<char> {
         let c = self.current_char()?;
-
         // advance the indices
-        self.index += c.len_utf8();
+        self.position += c.len_utf8();
         if c == '\n' {
-            self.position.line += 1;
-            self.position.column = 1;
-        } else {
-            self.position.column += c.len_utf8();
+            self.line += 1;
         }
-
         Some(c)
     }
 
     /// Advances the lexer by the given amount of bytes.
     /// If not enough bytes are available, will return as many as possible.
     pub fn advance_bytes(&mut self, n: usize) -> &str {
-        let slice = &self.source[self.index..self.index + n];
-        
-        let mut newlines = 0;
-        let mut last_newline_index = None;
-        for (i, c) in slice.char_indices() {
-            if c == '\n' {
-                newlines += 1;
-                last_newline_index = Some(i);
-            }
-        }
-
+        let slice = &self.source[self.position..][..n];
         // note: using slice.len() here instead of n because it's possible that
         // the slice is shorter than n bytes.
-        self.index += slice.len();
-        self.position.line += newlines;
-        if let Some(i) = last_newline_index {
-            self.position.column = slice.len() - i;
-        } else {
-            self.position.column += slice.len();
-        }
-
+        self.position += slice.len();
+        let newline_count = slice.chars().filter(|c| *c == '\n').count();
+        self.line += newline_count;
         slice
     }
 
     pub fn rest(&self) -> &str {
-        &self.source[self.index..]
+        &self.source[self.position..]
     }
 }
 

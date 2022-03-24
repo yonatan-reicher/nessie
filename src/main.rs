@@ -1,63 +1,65 @@
+mod source_error;
+
+mod token;
+mod value;
+
+mod r#type;
+mod ast;
+mod chunk;
+
 mod lexer;
 mod parser;
-mod ast;
 mod typecheck;
 mod codegen;
-mod value;
-mod r#type;
-mod chunk;
 mod vm;
 mod disassemble;
+
 mod cli;
 
 use std::path::Path;
 use std::io::{self, Write, stdin, stdout};
 use std::fs::read_to_string;
-use std::error;
 use vm::VM;
 use lexer::{lex, LexError};
 use parser::{parse, ParseError};
 use typecheck::{typecheck, TypeError};
 use codegen::compile;
 use value::Value;
+use source_error::SourceError;
 
 
 #[derive(Debug)]
 enum Error {
-    Io(io::Error),
     Lex(LexError),
     Parse(Vec<ParseError>),
     Type(Vec<TypeError>),
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Error {
+    fn show<W>(&self, source: &str, mut out: W) -> io::Result<()>
+        where W: Write
+    {
         match self {
-            Error::Io(err) => {
-                write!(f, "IO error: {}", err)
-            }
             Error::Lex(err) => {
-                write!(f, "Lex error: {}", err)
+                writeln!(out, "Lexing error:")?;
+                writeln!(out, "{}", err.with_source(source))?;
             }
             Error::Parse(err) => {
-                writeln!(f, "Parse errors:")?;
+                writeln!(out, "Parsing errors:")?;
                 for e in err {
-                    writeln!(f, "  {}", e)?;
+                    writeln!(out, "{}", e.with_source(source))?;
                 }
-                Ok(())
             }
             Error::Type(errors) => {
-                writeln!(f, "Type checking errors:")?;
+                writeln!(out, "Type errors:")?;
                 for e in errors {
-                    writeln!(f, "  {}", e)?;
+                    writeln!(out, "{}", e.with_source(source))?;
                 }
-                Ok(())
             }
         }
+        Ok(())
     }
 }
-
-impl error::Error for Error {}
 
 
 fn main() -> io::Result<()> {
@@ -105,7 +107,7 @@ fn run_file(file_path: &Path) -> io::Result<()> {
             println!("No value returned");
         }
         Err(err) => {
-            eprintln!("{}", err);
+            err.show(&source, &mut io::stderr())?;
         }
     }
     Ok(())
@@ -134,7 +136,7 @@ fn repl() -> io::Result<()> {
             }
             Ok(None) => { }
             Err(err) => {
-                eprintln!("{}", err);
+                err.show(input, &mut io::stderr())?;
             }
         }
     }
@@ -156,7 +158,7 @@ fn disassemble_file(file_path: &Path) -> io::Result<()> {
             disassamble(&mut stdout(), &chunk, name)?;
         }
         Err(err) => {
-            eprintln!("{}", err);
+            err.show(&source, io::stderr())?;
         }
     }
 
