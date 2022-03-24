@@ -102,6 +102,9 @@ impl<'source> Lexer<'source> {
         if let Some(c) = self.current_char() {
             if let Some(integer) = self.advance_int_literal()? {
                 Ok(Some(self.make_token(start, TokenKind::IntLiteral(integer))))
+            } else if let Some(string) = self.advance_string_literal()? {
+                let string = self.interned_strings.intern(string);
+                Ok(Some(self.make_token(start, TokenKind::String(string))))
             } else if let Some(kind) = TokenKind::from_single_char_token(c) {
                 self.advance_char();
                 Ok(Some(self.make_token(start, kind)))
@@ -220,13 +223,6 @@ mod tests {
     }
 
     #[test]
-    fn advance_string_literal() {
-        let mut lexer = Lexer::new("\"hello\"");
-        assert_eq!(lexer.advance_string_literal().unwrap(), Some("hello"));
-        assert_eq!(lexer.advance_string_literal().unwrap(), None);
-    }
-
-    #[test]
     fn advance_identifier() {
         let mut lexer = Lexer::new("hello");
         assert_eq!(lexer.advance_identifier(), Some("hello"));
@@ -252,5 +248,26 @@ mod tests {
         let mut lexer = Lexer::new("hello_world-world");
         assert_eq!(lexer.advance_identifier(), Some("hello_world-world"));
         assert_eq!(lexer.advance_identifier(), None);
+    }
+
+    #[test]
+    fn advance_identifier_with_numbers() {
+        let mut lexer = Lexer::new("hello123");
+        assert_eq!(lexer.advance_identifier(), Some("hello123"));
+        assert_eq!(lexer.advance_identifier(), None);
+    }
+
+    #[test]
+    fn advance_string_literal() {
+        let mut lexer = Lexer::new("\"hello\"");
+        assert_eq!(lexer.advance_string_literal().unwrap(), Some("hello"));
+        assert_eq!(lexer.advance_string_literal().unwrap(), None);
+    }
+
+    #[test]
+    fn advance_string_literal_with_escaped_quote() {
+        let mut lexer = Lexer::new("\"hello\\\"\"");
+        assert_eq!(lexer.advance_string_literal().unwrap(), Some("hello\""));
+        assert_eq!(lexer.advance_string_literal().unwrap(), None);
     }
 }
