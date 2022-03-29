@@ -1,6 +1,3 @@
-use std::rc::Rc;
-
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
     pub kind: TypeKind,
@@ -10,6 +7,7 @@ pub struct Type {
 pub enum TypeKind {
     Int,
     Bool,
+    String,
 }
 
 impl std::fmt::Display for TypeKind {
@@ -18,6 +16,7 @@ impl std::fmt::Display for TypeKind {
         match self {
             Int => write!(f, "int"),
             Bool => write!(f, "bool"),
+            String => write!(f, "string"),
         }
     }
 }
@@ -34,6 +33,9 @@ impl Type {
     };
     pub const BOOL: Type = Type {
         kind: TypeKind::Bool,
+    };
+    pub const STRING: Type = Type {
+        kind: TypeKind::String,
     };
 }
 

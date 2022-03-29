@@ -79,7 +79,7 @@ enum Precedence {
     And,            // and
     Equality,       // == !=
     Comparison,     // < > <= >=
-    Term,           // + -
+    Term,           // + - ++
     Factor,         // * / %
     Unary,          // ! -
     Call,           // . ()
@@ -128,6 +128,7 @@ fn get_binary_operator(token: &Token)
         Greater => Some((Comparison, BinaryOp::Gt)),
         LesserEqual => Some((Comparison, BinaryOp::Le)),
         GreaterEqual => Some((Comparison, BinaryOp::Ge)),
+        PlusPlus => Some((Term, Concat)),
         _ => None,
     }
 }
@@ -174,6 +175,10 @@ impl<'a> Parser<'a> {
             Some(&TokenKind::IntLiteral(i)) => {
                 self.index += 1;
                 Ok(Some(self.make_expr(start, ExprKind::Int(i))))
+            }
+            Some(TokenKind::String(s)) => {
+                self.index += 1;
+                Ok(Some(self.make_expr(start, ExprKind::String(s.clone()))))
             }
             Some(TokenKind::True) => {
                 self.index += 1;

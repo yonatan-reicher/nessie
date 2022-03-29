@@ -25,6 +25,7 @@ use parser::{parse, ParseError};
 use typecheck::{typecheck, TypeError};
 use codegen::compile;
 use value::Value;
+use r#type::Type;
 use source_error::SourceError;
 
 
@@ -80,7 +81,8 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn interpret(input: &str, vm: &mut VM) -> Result<Option<Value>, Error> {
+unsafe fn interpret(input: &str, vm: &mut VM)
+-> Result<Option<(Value, Type)>, Error> {
     let tokens = lex(input).map_err(Error::Lex)?;
     let mut ast = parse(&tokens).map_err(Error::Parse)?;
     typecheck(&mut ast).map_err(Error::Type)?;
@@ -88,7 +90,7 @@ fn interpret(input: &str, vm: &mut VM) -> Result<Option<Value>, Error> {
 
     vm.stack.clear();
     vm.run(&chunk);
-    Ok(vm.stack.pop())
+    Ok(vm.stack.pop().map(|v| (v, ast.body.ty.unwrap())))
 }
 
 fn run_file(file_path: &Path) -> io::Result<()> {
@@ -98,16 +100,19 @@ fn run_file(file_path: &Path) -> io::Result<()> {
     vm.set_debug_stream(Box::new(stdout()));
 
     let source = read_to_string(file_path)?;
-    let result = interpret(&source, &mut vm);
-    match result {
-        Ok(Some(value)) => {
-            println!("{:?}", value);
-        }
-        Ok(None) => {
-            println!("No value returned");
-        }
-        Err(err) => {
-            err.show(&source, &mut io::stderr())?;
+    unsafe {
+        let result = interpret(&source, &mut vm);
+        match result {
+            Ok(Some((mut value, ty))) => {
+                println!("{:?}", value);
+                value.free(ty);
+            }
+            Ok(None) => {
+                println!("No value returned");
+            }
+            Err(err) => {
+                err.show(&source, &mut io::stderr())?;
+            }
         }
     }
     Ok(())
@@ -130,13 +135,16 @@ fn repl() -> io::Result<()> {
             break Ok(());
         }
 
-        match interpret(input, &mut vm) {
-            Ok(Some(value)) => {
-                println!("{:?}", value);
-            }
-            Ok(None) => { }
-            Err(err) => {
-                err.show(input, &mut io::stderr())?;
+        unsafe {
+            match interpret(input, &mut vm) {
+                Ok(Some((mut value, ty))) => {
+                    println!("{:?}", value);
+                    value.free(ty);
+                }
+                Ok(None) => { }
+                Err(err) => {
+                    err.show(input, &mut io::stderr())?;
+                }
             }
         }
     }

@@ -115,7 +115,6 @@ make_token_kind! {
     Semicolon ';',
     Colon ':',
     Dot '.',
-    Plus '+',
     Star '*',
     Slash '/',
     Percent '%',
@@ -127,6 +126,8 @@ make_token_kind! {
     ----------------
     Arrow "->",
     Minus "-",
+    PlusPlus "++",
+    Plus "+",
     BangEqual "!=",
     EqualEqual "==",
     Bang "!",

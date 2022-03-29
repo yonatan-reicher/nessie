@@ -104,7 +104,8 @@ fn binary_op_types(op: BinaryOp) -> OperatorSignature {
         Le  => f(Type::INT, Type::BOOL),
         Ge  => f(Type::INT, Type::BOOL),
         Eq  => OperatorSignature::Comparison,
-        Neq => OperatorSignature::Comparison,
+        Ne => OperatorSignature::Comparison,
+        Concat => f(Type::STRING, Type::STRING),
     }
 }
 
@@ -152,6 +153,9 @@ impl Env {
             }
             ExprKind::Int(_) => {
                 expr.ty = Some(Type::INT.clone());
+            }
+            ExprKind::String(_) => {
+                expr.ty = Some(Type::STRING.clone());
             }
             ExprKind::Paren(e) => {
                 self.visit(e)?;

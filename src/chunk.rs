@@ -26,10 +26,13 @@ pub enum Instruction {
     // Boolean arithmetic instructions
     Not,
     And, Or, Xor,
+    // String instructions
+    Concat,
     // Comparison instructions
     Lt, Gt, Le, Ge,
     IntEq, IntNe,
     BoolEq, BoolNe,
+    StringEq, StringNe,
 }
 
 

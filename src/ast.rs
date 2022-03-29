@@ -4,6 +4,7 @@
 
 use crate::token::Span;
 use crate::r#type::Type;
+use std::rc::Rc;
 
 
 #[derive(Debug)]
@@ -26,6 +27,8 @@ pub enum ExprKind {
     True,
     /// A boolean false literal
     False,
+    /// A string literal
+    String(Rc<str>),
     /// A binary operator expression.
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     /// A unary operator expression.
@@ -40,6 +43,8 @@ pub enum BinaryOp {
     Add, Sub, Mul, Div, Mod,
     // Boolean operators
     And, Or, Xor,
+    // String operators
+    Concat,
     // Comparison operators
     Eq, Ne, Lt, Le, Gt, Ge,
 }

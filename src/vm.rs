@@ -94,6 +94,35 @@ impl VM {
             Instruction::Le => binary_operation!(<=, int, boolean),
             Instruction::Gt => binary_operation!(>, int, boolean),
             Instruction::Ge => binary_operation!(>=, int, boolean),
+            // string equality is implemented differently
+            Instruction::StringEq => {
+                unsafe {
+                    let mut b = self.stack.pop().unwrap().string;
+                    let mut a = self.stack.pop().unwrap().string;
+                    self.stack.push(Value { boolean: a.get() == b.get() });
+                    a.dec_ref();
+                    b.dec_ref();
+                }
+            }
+            Instruction::StringNe => {
+                unsafe {
+                    let mut b = self.stack.pop().unwrap().string;
+                    let mut a = self.stack.pop().unwrap().string;
+                    self.stack.push(Value { boolean: a.get() != b.get() });
+                    a.dec_ref();
+                    b.dec_ref();
+                }
+            }
+            Instruction::Concat => {
+                unsafe {
+                    let mut b = self.stack.pop().unwrap().string;
+                    let mut a = self.stack.pop().unwrap().string;
+                    let concatinated = a.get().to_string() + b.get();
+                    self.stack.push(Value::new_string(&concatinated));
+                    a.dec_ref();
+                    b.dec_ref();
+                }
+            }
         }
         *ip += 1;
 
