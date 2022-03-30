@@ -2,13 +2,15 @@
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::{self, NonNull as P};
+use std::marker::PhantomData;
 
 
 /// A heap-allocated value of type `T` which is immutable and must be counted
 /// by hand.
 pub struct ManualRc<T>
 where T: ?Sized + ManualRcBoxable {
-    ptr: P<ManualRcBox<T>>,
+    ptr: P<u8>,
+    phantom: PhantomData<T>,
 }
 
 pub type RefCount = usize;
@@ -19,27 +21,30 @@ pub trait ManualRcBoxable {
 
     fn header(&self) -> Self::Header;
 
-    fn layout(&self) -> Layout;
+    fn layout(header: &Self::Header) -> Layout;
 
-    fn layout_from_header(header: &Self::Header) -> Layout;
-
-    unsafe fn mem_to_rcbox(&self, mem: P<u8>) -> P<ManualRcBox<Self>>;
+    unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<Self>>;
 
     unsafe fn copy_to(&self, ptr: P<ManualRcBox<Self>>);
 }
 
-#[repr(C)]
-struct ManualRcBox<T>
+struct ManualRcBoxHead<T>
 where T: ?Sized + ManualRcBoxable {
     ref_count: RefCount,
     header: T::Header,
+}
+
+#[repr(C)]
+pub struct ManualRcBox<T>
+where T: ?Sized + ManualRcBoxable {
+    head: ManualRcBoxHead<T>,
     value: T,
 }
 
 impl<T> Clone for ManualRc<T>
 where T: ?Sized + ManualRcBoxable {
     fn clone(&self) -> Self {
-        ManualRc { ptr: self.ptr }
+        ManualRc { ptr: self.ptr, phantom: PhantomData }
     }
 }
 
@@ -52,39 +57,50 @@ where T: ?Sized + ManualRcBoxable {
     /// Creates a new `ManualRc` containing the given value.
     pub unsafe fn new(value: &T) -> Self {
         println!("Newing a value");
-        let layout = value.layout();
+        let header = value.header();
+        let layout = T::layout(&header);
         let ptr = P::new(alloc(layout)).unwrap();
-        let mut ptr = value.mem_to_rcbox(ptr);
-        ptr.as_mut().ref_count = 1;
-        (&mut ptr.as_mut().header as *mut T::Header).write(value.header());
-        value.copy_to(ptr);
-        ManualRc { ptr }
+        {
+            let mut ptr = T::from_ptr(&header, ptr);
+            ptr.as_mut().head.ref_count = 1;
+            (&mut ptr.as_mut().head.header as *mut T::Header).write(header);
+            value.copy_to(ptr);
+        }
+        ManualRc { ptr, phantom: PhantomData }
+    }
+
+    unsafe fn head(&self) -> P<ManualRcBoxHead<T>> {
+        self.ptr.cast()
+    }
+
+    pub unsafe fn header(&self) -> &T::Header {
+        &self.head().as_ref().header
+    }
+
+    pub unsafe fn ref_count(&self) -> RefCount {
+        self.head().as_ref().ref_count
+    }
+
+    pub unsafe fn ref_count_mut(&mut self) -> &mut RefCount {
+        &mut self.head().as_mut().ref_count
+    }
+
+    unsafe fn fat_ptr(&self) -> P<ManualRcBox<T>> {
+        T::from_ptr(self.header(), self.ptr)
     }
 
     /// Returns a mutable reference to the contained value.
     pub unsafe fn get_mut(&mut self) -> &mut T {
-        &mut self.ptr.as_mut().value
+        &mut self.fat_ptr().as_mut().value
     }
 
     /// Returns a reference to the contained value.
     pub unsafe fn get(&self) -> &T {
-        &self.ptr.as_ref().value
-    }
-
-    fn ref_count_mut(&mut self) -> &mut RefCount {
-        unsafe {
-            &mut self.ptr.as_mut().ref_count
-        }
-    }
-
-    pub fn ref_count(&self) -> RefCount {
-        unsafe {
-            self.ptr.as_ref().ref_count
-        }
+        &self.fat_ptr().as_ref().value
     }
 
     /// Increases the reference count by one.
-    pub fn inc_ref(&mut self) {
+    pub unsafe fn inc_ref(&mut self) {
         *self.ref_count_mut() += 1;
     }
 
@@ -99,7 +115,7 @@ where T: ?Sized + ManualRcBoxable {
             ptr::drop_in_place(self.ptr.as_ptr());
             dealloc(
                 self.ptr.as_ptr().cast(),
-                T::layout_from_header(&self.ptr.as_ref().header)
+                T::layout(self.header()),
             );
         }
     }
@@ -111,15 +127,11 @@ where T: Clone {
 
     fn header(&self) -> Self::Header { () }
 
-    fn layout(&self) -> Layout {
+    fn layout(_: &Self::Header) -> Layout {
         Layout::new::<ManualRcBox<T>>()
     }
 
-    fn layout_from_header(_: &Self::Header) -> Layout {
-        Layout::new::<ManualRcBox<T>>()
-    }
-
-    unsafe fn mem_to_rcbox(&self, mem: P<u8>) -> P<ManualRcBox<T>> {
+    unsafe fn from_ptr(_: &Self::Header, mem: P<u8>) -> P<ManualRcBox<T>> {
         mem.cast()
     }
 
@@ -136,17 +148,13 @@ where T: Copy {
         self.len()
     }
 
-    fn layout(&self) -> Layout {
-        Layout::array::<T>(self.len()).unwrap()
-    }
-
-    fn layout_from_header(header: &Self::Header) -> Layout {
+    fn layout(header: &Self::Header) -> Layout {
         Layout::array::<T>(*header).unwrap()
     }
 
-    unsafe fn mem_to_rcbox(&self, mem: P<u8>) -> P<ManualRcBox<[T]>> {
+    unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<[T]>> {
         let mem = mem.as_ptr();
-        let ptr = ptr::slice_from_raw_parts(mem as *mut T, self.len());
+        let ptr = ptr::slice_from_raw_parts(mem as *mut T, *header);
         P::new(ptr as _).unwrap()
     }
 
@@ -166,17 +174,13 @@ impl ManualRcBoxable for str {
         self.len()
     }
 
-    fn layout(&self) -> Layout {
-        Layout::for_value(self)
-    }
-
-    fn layout_from_header(header: &Self::Header) -> Layout {
+    fn layout(header: &Self::Header) -> Layout {
         Layout::for_value(header)
     }
 
-    unsafe fn mem_to_rcbox(&self, mem: P<u8>) -> P<ManualRcBox<str>> {
+    unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<str>> {
         let mem = mem.as_ptr();
-        let ptr = ptr::slice_from_raw_parts(mem as *mut u8, self.len());
+        let ptr = ptr::slice_from_raw_parts(mem as *mut u8, *header);
         P::new(ptr as _).unwrap()
     }
 

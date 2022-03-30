@@ -58,3 +58,41 @@ impl Value {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_size() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<Value>(), size_of::<usize>());
+    }
+
+    #[test]
+    fn value_new_int() {
+        let value = Value::new_int(42);
+        unsafe {
+            assert_eq!(value.int, 42);
+        }
+    }
+
+    #[test]
+    fn value_new_boolean() {
+        let value = Value::new_boolean(true);
+        unsafe {
+            assert_eq!(value.boolean, true);
+        }
+    }
+
+    #[test]
+    fn value_new_string() {
+        unsafe {
+            let mut value = Value::new_string("hello world");
+            assert_eq!(value.string.get(), "hello world");
+            value.string.dec_ref();
+        }
+    }
+}
+
