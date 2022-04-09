@@ -1,12 +1,10 @@
 //! Contains byte code instructions and chunk types.
 
-use std::fmt::Display;
-use crate::value::Value;
 use crate::token::Line;
-
+use crate::value::Value;
+use std::fmt::Display;
 
 type ConstantIndex = u16;
-
 
 /// A C-like enum that represents the different types of instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,19 +20,38 @@ pub enum Instruction {
     False,
     // Integer arithmetic instructions.
     Neg,
-    Add, Sub, Mul, Div, Mod,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
     // Boolean arithmetic instructions
     Not,
-    And, Or, Xor,
+    And,
+    Or,
+    Xor,
     // String instructions
     Concat,
     // Comparison instructions
-    Lt, Gt, Le, Ge,
-    IntEq, IntNe,
-    BoolEq, BoolNe,
-    StringEq, StringNe,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    IntEq,
+    IntNe,
+    BoolEq,
+    BoolNe,
+    StringEq,
+    StringNe,
+    /// Drops a primitive value placed one before the last value on the stack
+    PrimitiveDropAbove,
+    /// Drops a string value placed one before the uppermost value on the stack
+    StringDropAbove,
+    /// Pushes a primitive value onto the stack.
+    PrimitiveGetLocal(u16),
+    /// Pushes a string value onto the stack.
+    StringGetLocal(u16),
 }
-
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -43,14 +60,12 @@ impl Display for Instruction {
     }
 }
 
-
 /// A sequence of byte code instructions with their parameters and line numbers.
 pub struct Chunk {
     instructions: Vec<Instruction>,
     instruction_lines: Vec<Line>,
     constants: Vec<Value>,
 }
-
 
 impl Chunk {
     pub fn new() -> Self {
@@ -85,11 +100,10 @@ impl Chunk {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn instruction_size() {
         assert_eq!(std::mem::size_of::<Instruction>(), 4);

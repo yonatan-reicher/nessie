@@ -1,11 +1,10 @@
 use crate::ast::*;
 use crate::chunk::{Chunk, Instruction};
-use crate::value::Value;
 use crate::r#type::{Type, TypeKind};
+use crate::value::Value;
+use std::collections::HashMap;
 
-
-pub enum CompileErrorKind {
-}
+pub enum CompileErrorKind {}
 
 fn unary_op_instruction(op: UnaryOp) -> Instruction {
     match op {
@@ -23,7 +22,7 @@ fn binary_op_instruction(op: BinaryOp, arg_type: &Type) -> Instruction {
         (B::Mul, _) => I::Mul,
         (B::Div, _) => I::Div,
         (B::Mod, _) => I::Mod,
-        (B::Or , _)=> I::Or,
+        (B::Or, _) => I::Or,
         (B::And, _) => I::And,
         (B::Xor, _) => I::Xor,
         (B::Eq, TypeKind::Int) => I::IntEq,
@@ -40,44 +39,123 @@ fn binary_op_instruction(op: BinaryOp, arg_type: &Type) -> Instruction {
     }
 }
 
-
 pub fn compile(program: &Program) -> Chunk {
-    let mut chunk = Chunk::new();
-    emit_expr(&program.body, &mut chunk);
-    // chunk.write(Instruction::Return, program.body.span.end.line);
-    chunk
+    Compiler::new().compile(program)
 }
 
-pub fn emit_expr(expr: &Expr, chunk: &mut Chunk) {
-    match &expr.kind {
-        &ExprKind::Int(int) => {
-            let constant = chunk.write_constant(Value { int });
-            chunk.write(Instruction::Constant(constant), expr.span.line);
+#[derive(Debug)]
+struct Compiler {
+    variables: HashMap<UniqueName, Location>,
+    frame_offset: usize,
+}
+
+/// A location that a value can be at, at runtime
+#[derive(Debug)]
+enum Location {
+    FrameOffset(usize),
+}
+
+impl Compiler {
+    pub fn new() -> Self {
+        Compiler {
+            variables: HashMap::new(),
+            frame_offset: 0,
         }
-        ExprKind::True => {
-            chunk.write(Instruction::True, expr.span.line);
-        }
-        ExprKind::False => {
-            chunk.write(Instruction::False, expr.span.line);
-        }
-        ExprKind::String(string) => {
-            unsafe {
-                let constant = chunk.write_constant(Value::new_string(string));
+    }
+
+    pub fn compile(&mut self, program: &Program) -> Chunk {
+        let mut chunk = Chunk::new();
+        self.emit_expr(&program.body, &mut chunk);
+        chunk
+    }
+
+    pub fn emit_expr(&mut self, expr: &Expr, chunk: &mut Chunk) {
+        let frame_offset = self.frame_offset;
+        match &expr.kind {
+            &ExprKind::Int(int) => {
+                let constant = chunk.write_constant(Value { int });
                 chunk.write(Instruction::Constant(constant), expr.span.line);
             }
+            ExprKind::True => {
+                chunk.write(Instruction::True, expr.span.line);
+            }
+            ExprKind::False => {
+                chunk.write(Instruction::False, expr.span.line);
+            }
+            ExprKind::String(string) => unsafe {
+                let constant = chunk.write_constant(Value::new_string(string));
+                chunk.write(Instruction::Constant(constant), expr.span.line);
+            },
+            ExprKind::Paren(e) => self.emit_expr(&e, chunk),
+            ExprKind::Unary(op, e) => {
+                self.emit_expr(&e, chunk);
+                chunk.write(unary_op_instruction(*op), expr.span.line);
+            }
+            ExprKind::Binary(op, l, r) => {
+                // Write the two operands to the stack
+                self.emit_expr(&l, chunk);
+                self.emit_expr(&r, chunk);
+                chunk.write(
+                    binary_op_instruction(*op, l.ty.as_ref().unwrap()),
+                    expr.span.line,
+                );
+                // After the binary operation, the stack has been reduced by one
+                self.frame_offset -= 1;
+            }
+            ExprKind::Let {
+                name: _,
+                unique_name,
+                binding,
+                expr: e,
+            } => {
+                // Place the result of `binding` on the stack.
+                // That location will be the address of the new local variable.
+                self.add_local(unique_name.clone().unwrap());
+                self.emit_expr(&binding, chunk);
+                // Then return the body
+                self.emit_expr(&e, chunk);
+                self.emit_stack_drop_above(binding.ty.as_ref().unwrap(), binding.span.line, chunk);
+            }
+            ExprKind::Var(_, unique_name) => {
+                match self.variables[unique_name.as_ref().unwrap()] {
+                    Location::FrameOffset(offset) => {
+                        self.emit_stack_get(
+                            expr.ty.as_ref().unwrap(),
+                            offset,
+                            expr.span.line,
+                            chunk,
+                        );
+                    }
+                }
+            }
         }
-        ExprKind::Paren(e) => {
-            emit_expr(&e, chunk)
+        self.frame_offset = frame_offset + 1;
+    }
+
+    fn add_local(&mut self, unique_name: UniqueName) {
+        self.variables.insert(unique_name, Location::FrameOffset(self.frame_offset));
+    }
+
+    fn emit_stack_drop_above(&mut self, ty: &Type, line: usize, chunk: &mut Chunk) {
+        match &ty.kind {
+            TypeKind::Bool | TypeKind::Int => {
+                chunk.write(Instruction::PrimitiveDropAbove, line);
+            }
+            TypeKind::String => {
+                chunk.write(Instruction::StringDropAbove, line);
+            }
         }
-        ExprKind::Unary(op, e) => {
-            emit_expr(&e, chunk);
-            chunk.write(unary_op_instruction(*op), expr.span.line);
-        }
-        ExprKind::Binary(op, l, r) => {
-            emit_expr(&l, chunk);
-            emit_expr(&r, chunk);
-            chunk.write(binary_op_instruction(*op, l.ty.as_ref().unwrap()), expr.span.line);
+        self.frame_offset -= 1;
+    }
+
+    fn emit_stack_get(&self, ty: &Type, offset: usize, line: usize, chunk: &mut Chunk) {
+        match &ty.kind {
+            TypeKind::Bool | TypeKind::Int => {
+                chunk.write(Instruction::PrimitiveGetLocal(offset as _), line);
+            }
+            TypeKind::String => {
+                chunk.write(Instruction::StringGetLocal(offset as _), line);
+            }
         }
     }
 }
-

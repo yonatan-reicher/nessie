@@ -1,14 +1,15 @@
 //! Provides the `ManualRc` type, a manual reference-counting pointer type.
 
 use std::alloc::{alloc, dealloc, Layout};
-use std::ptr::{self, NonNull as P};
 use std::marker::PhantomData;
-
+use std::ptr::{self, NonNull as P};
 
 /// A heap-allocated value of type `T` which is immutable and must be counted
 /// by hand.
 pub struct ManualRc<T>
-where T: ?Sized + ManualRcBoxable {
+where
+    T: ?Sized + ManualRcBoxable,
+{
     ptr: P<u8>,
     phantom: PhantomData<T>,
 }
@@ -29,31 +30,40 @@ pub trait ManualRcBoxable {
 }
 
 struct ManualRcBoxHead<T>
-where T: ?Sized + ManualRcBoxable {
+where
+    T: ?Sized + ManualRcBoxable,
+{
     ref_count: RefCount,
     header: T::Header,
 }
 
 #[repr(C)]
 pub struct ManualRcBox<T>
-where T: ?Sized + ManualRcBoxable {
+where
+    T: ?Sized + ManualRcBoxable,
+{
     head: ManualRcBoxHead<T>,
     value: T,
 }
 
 impl<T> Clone for ManualRc<T>
-where T: ?Sized + ManualRcBoxable {
+where
+    T: ?Sized + ManualRcBoxable,
+{
     fn clone(&self) -> Self {
-        ManualRc { ptr: self.ptr, phantom: PhantomData }
+        ManualRc {
+            ptr: self.ptr,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl<T> Copy for ManualRc<T>
-where T: ?Sized + ManualRcBoxable {}
-
+impl<T> Copy for ManualRc<T> where T: ?Sized + ManualRcBoxable {}
 
 impl<T> ManualRc<T>
-where T: ?Sized + ManualRcBoxable {
+where
+    T: ?Sized + ManualRcBoxable,
+{
     /// Creates a new `ManualRc` containing the given value.
     pub unsafe fn new(value: &T) -> Self {
         println!("Newing a value");
@@ -66,7 +76,10 @@ where T: ?Sized + ManualRcBoxable {
             (&mut ptr.as_mut().head.header as *mut T::Header).write(header);
             value.copy_to(ptr);
         }
-        ManualRc { ptr, phantom: PhantomData }
+        ManualRc {
+            ptr,
+            phantom: PhantomData,
+        }
     }
 
     unsafe fn head(&self) -> P<ManualRcBoxHead<T>> {
@@ -112,20 +125,20 @@ where T: ?Sized + ManualRcBoxable {
         if self.ref_count() == 0 {
             // Drop the value and free the memory
             println!("Dropping value");
-            ptr::drop_in_place(self.ptr.as_ptr());
-            dealloc(
-                self.ptr.as_ptr().cast(),
-                T::layout(self.header()),
-            );
+            dealloc(self.ptr.as_ptr(), T::layout(self.header()));
         }
     }
 }
 
 impl<T> ManualRcBoxable for T
-where T: Clone {
+where
+    T: Clone,
+{
     type Header = ();
 
-    fn header(&self) -> Self::Header { () }
+    fn header(&self) -> Self::Header {
+        ()
+    }
 
     fn layout(_: &Self::Header) -> Layout {
         Layout::new::<ManualRcBox<T>>()
@@ -141,7 +154,9 @@ where T: Clone {
 }
 
 impl<T> ManualRcBoxable for [T]
-where T: Copy {
+where
+    T: Copy,
+{
     type Header = usize;
 
     fn header(&self) -> Self::Header {
@@ -162,7 +177,7 @@ where T: Copy {
         ptr::copy_nonoverlapping(
             self.as_ptr(),
             &mut ptr.as_mut().value as *mut [T] as *mut T,
-            self.len()
+            self.len(),
         );
     }
 }
@@ -188,8 +203,7 @@ impl ManualRcBoxable for str {
         ptr::copy_nonoverlapping(
             self.as_ptr(),
             &mut ptr.as_mut().value as *mut str as *mut u8,
-            self.len()
+            self.len(),
         );
     }
 }
-

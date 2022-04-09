@@ -1,7 +1,6 @@
 use crate::chunk::{Chunk, Instruction};
-use crate::value::Value;
 use crate::disassemble::disassamble_instruction;
-
+use crate::value::Value;
 
 /// A virtual machine is a stack-based interpreter for a chunk of bytecode.
 pub struct VM {
@@ -95,33 +94,57 @@ impl VM {
             Instruction::Gt => binary_operation!(>, int, boolean),
             Instruction::Ge => binary_operation!(>=, int, boolean),
             // string equality is implemented differently
-            Instruction::StringEq => {
-                unsafe {
-                    let mut b = self.stack.pop().unwrap().string;
-                    let mut a = self.stack.pop().unwrap().string;
-                    self.stack.push(Value { boolean: a.get() == b.get() });
-                    a.dec_ref();
-                    b.dec_ref();
-                }
+            Instruction::StringEq => unsafe {
+                let mut b = self.stack.pop().unwrap().string;
+                let mut a = self.stack.pop().unwrap().string;
+                self.stack.push(Value {
+                    boolean: a.get() == b.get(),
+                });
+                a.dec_ref();
+                b.dec_ref();
+            },
+            Instruction::StringNe => unsafe {
+                let mut b = self.stack.pop().unwrap().string;
+                let mut a = self.stack.pop().unwrap().string;
+                self.stack.push(Value {
+                    boolean: a.get() != b.get(),
+                });
+                a.dec_ref();
+                b.dec_ref();
+            },
+            Instruction::Concat => unsafe {
+                let mut b = self.stack.pop().unwrap().string;
+                let mut a = self.stack.pop().unwrap().string;
+                let concatinated = a.get().to_string() + b.get();
+                self.stack.push(Value::new_string(&concatinated));
+                a.dec_ref();
+                b.dec_ref();
+            },
+            // Variables
+            Instruction::PrimitiveDropAbove => {
+                let top = self.stack.pop().unwrap();
+                // take the primitive value out
+                self.stack.pop();
+                // push back the top of the stack
+                self.stack.push(top);
             }
-            Instruction::StringNe => {
-                unsafe {
-                    let mut b = self.stack.pop().unwrap().string;
-                    let mut a = self.stack.pop().unwrap().string;
-                    self.stack.push(Value { boolean: a.get() != b.get() });
-                    a.dec_ref();
-                    b.dec_ref();
-                }
+            Instruction::StringDropAbove => {
+                let top = self.stack.pop().unwrap();
+                // take the string out
+                let mut string_value = self.stack.pop().unwrap();
+                // decrease reference count
+                unsafe { string_value.string.dec_ref() };
+                // place the top back
+                self.stack.push(top);
             }
-            Instruction::Concat => {
-                unsafe {
-                    let mut b = self.stack.pop().unwrap().string;
-                    let mut a = self.stack.pop().unwrap().string;
-                    let concatinated = a.get().to_string() + b.get();
-                    self.stack.push(Value::new_string(&concatinated));
-                    a.dec_ref();
-                    b.dec_ref();
-                }
+            Instruction::PrimitiveGetLocal(offset) => {
+                let value = self.stack[offset as usize].clone();
+                self.stack.push(value);
+            }
+            Instruction::StringGetLocal(offset) => {
+                let mut string_value = self.stack[offset as usize].clone();
+                unsafe { string_value.string.inc_ref() };
+                self.stack.push(string_value);
             }
         }
         *ip += 1;
@@ -146,20 +169,28 @@ impl VM {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
 
     /// This should be used instead of writing to stdout directly,
     /// because while println! are captured by the test runner,
     /// stdout is not.
     fn disassamble(chunk: &Chunk, name: &str) {
         use crate::disassemble::disassamble;
-        
+
         let mut stream = Vec::new();
         disassamble(&mut stream, chunk, name).unwrap();
         println!("{}", String::from_utf8(stream).unwrap());
+    }
+
+    fn prog(code: &str) -> Chunk {
+        let tokens = crate::lexer::lex(code).unwrap();
+        let mut program = crate::parser::parse(&tokens).unwrap();
+        crate::typecheck::typecheck(&mut program).unwrap();
+        let chunk = crate::codegen::compile(&program);
+        chunk
     }
 
     #[test]
@@ -170,7 +201,7 @@ mod tests {
 
         let mut vm = VM::new();
         vm.run(&chunk);
-     
+
         unsafe { assert_eq!(vm.stack.pop().unwrap().int, 1) };
         assert_eq!(vm.stack.len(), 0);
     }
@@ -198,5 +229,38 @@ mod tests {
         unsafe { assert_eq!(vm.stack.pop().unwrap().int, -3) };
         assert_eq!(vm.stack.len(), 0);
     }
-}
 
+    #[test]
+    fn let_program() {
+        let program = prog(indoc! {"
+            let a = 1 in
+            let b = 2 in
+            let c = a + b in
+            let d = c * 2 in
+            d - c
+        "});
+        
+        disassamble(&program, "let_program");
+
+        let mut vm = VM::new();
+        vm.run(&program);
+
+        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 3) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn add_with_let() {
+        let program = prog(indoc! {"
+            2 + (let a = 1 in a * 3)
+        "});
+
+        disassamble(&program, "add_with_let");
+
+        let mut vm = VM::new();
+        vm.run(&program);
+
+        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 5) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+}

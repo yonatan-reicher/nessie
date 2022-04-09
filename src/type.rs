@@ -38,4 +38,3 @@ impl Type {
         kind: TypeKind::String,
     };
 }
-

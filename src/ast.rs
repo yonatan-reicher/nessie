@@ -2,10 +2,9 @@
 //! The AST is a tree-like structure that represents the structure of the
 //! source code and potentially contains semantic information.
 
-use crate::token::Span;
 use crate::r#type::Type;
+use crate::token::Span;
 use std::rc::Rc;
-
 
 #[derive(Debug)]
 pub struct Program {
@@ -35,18 +34,46 @@ pub enum ExprKind {
     Unary(UnaryOp, Box<Expr>),
     /// An expression wrapped in parentheses.
     Paren(Box<Expr>),
+    /// A `let x = e in E` expression.
+    Let {
+        name: Rc<str>,
+        unique_name: Option<UniqueName>,
+        binding: Box<Expr>,
+        expr: Box<Expr>,
+    },
+    /// A variable
+    Var(Rc<str>, Option<UniqueName>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UniqueName {
+    /// The original name in the source code
+    pub name: Rc<str>,
+    /// The amount of identifiers this one is shadowing
+    pub shadow_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     // Int operators
-    Add, Sub, Mul, Div, Mod,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
     // Boolean operators
-    And, Or, Xor,
+    And,
+    Or,
+    Xor,
     // String operators
     Concat,
     // Comparison operators
-    Eq, Ne, Lt, Le, Gt, Ge,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -68,4 +95,3 @@ pub enum TypeExprKind {
     Int,
     Bool,
 }
-

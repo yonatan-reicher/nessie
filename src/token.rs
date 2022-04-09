@@ -1,3 +1,4 @@
+use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
 
@@ -86,6 +87,25 @@ macro_rules! make_token_kind {
                         ));
                 })*
                 None
+            }
+        }
+
+        impl Display for TokenKind {
+            fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+                match self {
+                    $(TokenKind::$keyword => {
+                        write!(f, stringify!($keyword_ident))
+                    })*
+                    $(TokenKind::$single_char_token => {
+                        write!(f, "{}", $single_char_token_char)
+                    })*
+                    $(TokenKind::$multi_char_token => {
+                        write!(f, "{}", $multi_char_token_str)
+                    })*
+                    $(TokenKind::$literal(value) => {
+                        write!(f, "{}", value)
+                    })*
+                }
             }
         }
     };
