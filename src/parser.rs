@@ -6,34 +6,45 @@ use crate::token::prelude::*;
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
+type TKind = TokenKind;
+
+struct Parser<'a> {
+    tokens: &'a [Token],
+    index: usize,
+    errors: Vec<ParseError>,
+}
+
+
 #[derive(Debug)]
 pub enum ParseErrorKind {
     ExpectedExpression,
     ExpectedExpressionAtom,
-    ExpectedEndOfProgram,
+    LeftoverSource,
     UnclosedDelimiter,
     ExpectedIdentifier,
     ExpectedToken(TokenKind),
-}
-
-impl std::fmt::Display for ParseErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ParseErrorKind::*;
-        match self {
-            ExpectedExpression => write!(f, "Expected expression"),
-            ExpectedExpressionAtom => write!(f, "Expected expression atom"),
-            ExpectedEndOfProgram => write!(f, "Expected end of program"),
-            UnclosedDelimiter => write!(f, "Unclosed delimiter"),
-            ExpectedIdentifier => write!(f, "Expected identifier"),
-            ExpectedToken(tk) => write!(f, "Expected a {}", tk),
-        }
-    }
+    EmptyCode,
 }
 
 #[derive(Debug)]
 pub struct ParseError {
     pub kind: ParseErrorKind,
     pub span: Span,
+}
+
+impl Display for ParseErrorKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use ParseErrorKind::*;
+        match self {
+            ExpectedExpression => write!(f, "Expected expression"),
+            ExpectedExpressionAtom => write!(f, "Expected expression atom"),
+            UnclosedDelimiter => write!(f, "Unclosed delimiter"),
+            LeftoverSource => write!(f, "The source code contained leftover characters"),
+            ExpectedIdentifier => write!(f, "Expected identifier"),
+            ExpectedToken(tk) => write!(f, "Expected a {}", tk),
+            EmptyCode => write!(f, "The source code is empty"),
+        }
+    }
 }
 
 impl Display for ParseError {
@@ -50,6 +61,7 @@ impl SourceError for ParseError {
     }
 }
 
+
 pub fn parse<'a>(tokens: &[Token]) -> Result<Program, Vec<ParseError>> {
     let mut parser = Parser {
         tokens,
@@ -57,16 +69,10 @@ pub fn parse<'a>(tokens: &[Token]) -> Result<Program, Vec<ParseError>> {
         errors: Vec::new(),
     };
 
-    match parser.parse_program() {
+    match parser.program() {
         Ok(program) if parser.errors.is_empty() => Ok(program),
         _ => Err(parser.errors),
     }
-}
-
-struct Parser<'a> {
-    tokens: &'a [Token],
-    index: usize,
-    errors: Vec<ParseError>,
 }
 
 fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
@@ -135,13 +141,38 @@ fn get_binary_operator(token: &Token) -> Option<(Precedence, BinaryOp)> {
 }
 
 impl<'a> Parser<'a> {
+    fn skip_until_kind(&mut self, kind: &TokenKind) {
+        while let Some(token) = self.tokens.get(self.index) {
+            if token.kind == *kind {
+                break;
+            }
+            self.index += 1;
+        }
+    }
+
+    fn in_range(&self) -> bool {
+        self.index < self.tokens.len()
+    }
+
     fn span_from_token_indices(&self, start: usize, end: usize) -> Span {
+        // Edge case - no tokens at all
+        if self.tokens.is_empty() { return Span::empty(0, 0); }
+
         let max_index = self.tokens.len() - 1;
         let start = start.clamp(0, max_index);
         let end = end.clamp(0, max_index);
         let Span { start, line, .. } = self.tokens[start].span;
         let Span { end, .. } = self.tokens[end].span;
         Span { start, end, line }
+    }
+
+    fn report_error(&mut self, kind: ParseErrorKind, start: usize) {
+        let span = self.span_from_token_indices(start, self.index);
+        self.errors.push(ParseError { kind, span });
+    }
+
+    fn report_error_here(&mut self, kind: ParseErrorKind) {
+        self.report_error(kind, self.index)
     }
 
     fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
@@ -151,23 +182,6 @@ impl<'a> Parser<'a> {
             kind,
             ty: None,
         }
-    }
-
-    fn make_error(&mut self, kind: ParseErrorKind, start: usize, end: usize) {
-        let span = self.span_from_token_indices(start, end);
-        self.errors.push(ParseError { kind, span });
-    }
-
-    pub fn parse_program(&mut self) -> Result<Program, ()> {
-        let body = self.parse_expr()?;
-        if self.index < self.tokens.len() {
-            self.make_error(
-                ParseErrorKind::ExpectedEndOfProgram,
-                self.index,
-                self.tokens.len() - 1,
-            );
-        }
-        Ok(Program { body })
     }
 
     fn parse_atom(&mut self) -> Result<Option<Expr>, ()> {
@@ -197,9 +211,9 @@ impl<'a> Parser<'a> {
             }
             Some(&TokenKind::LeftParen) => {
                 self.index += 1;
-                let expr = self.parse_expr();
+                let expr = self.expr();
                 if try_kind(self.tokens.get(self.index)) != Some(&TokenKind::RightParen) {
-                    self.make_error(ParseErrorKind::UnclosedDelimiter, start, start);
+                    self.report_error_here(ParseErrorKind::UnclosedDelimiter);
                 }
                 self.index += 1;
                 expr.map(|expr| {
@@ -216,7 +230,7 @@ impl<'a> Parser<'a> {
                         Ok(Some(self.make_expr(start, kind)))
                     }
                     Ok(None) => {
-                        self.make_error(ParseErrorKind::ExpectedExpressionAtom, start, self.index);
+                        self.report_error(ParseErrorKind::ExpectedExpressionAtom, start);
                         Err(())
                     }
                     Err(()) => Err(()),
@@ -232,11 +246,7 @@ impl<'a> Parser<'a> {
             return match atom {
                 Some(atom) => Ok(atom),
                 None => {
-                    self.make_error(
-                        ParseErrorKind::ExpectedExpressionAtom,
-                        self.index,
-                        self.index,
-                    );
+                    self.report_error_here(ParseErrorKind::ExpectedExpressionAtom);
                     Err(())
                 }
             };
@@ -266,65 +276,62 @@ impl<'a> Parser<'a> {
         Ok(ret)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ()> {
+    fn token_kind_eq(&mut self, kind: TokenKind) -> Result<(), ()> {
+        if try_kind(self.tokens.get(self.index)) == Some(&kind) {
+            self.index += 1;
+            Ok(())
+        } else {
+            self.report_error_here(ParseErrorKind::ExpectedToken(kind));
+            Err(())
+        }
+    }
+
+    fn identifier(&mut self) -> Result<Rc<str>, ()> {
+        if let Some(TKind::Identifier(name)) = try_kind(self.tokens.get(self.index)) {
+            self.index += 1;
+            Ok(name.clone())
+        } else {
+            self.report_error_here(ParseErrorKind::ExpectedIdentifier);
+            Err(())
+        }
+    }
+
+    fn let_expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
-        let res = (|| match try_kind(self.tokens.get(self.index)) {
-            Some(TokenKind::Let) => {
-                self.index += 1;
-                let name = self.parse_assign_name()?;
-                let expr = self.parse_expr()?;
-                self.expect_kind(&TokenKind::In);
-                let body = self.parse_expr()?;
-                let kind = ExprKind::Let {
-                    name,
-                    unique_name: None,
-                    binding: Box::new(expr),
-                    expr: Box::new(body),
-                };
-                Ok(self.make_expr(start, kind))
-            }
+        self.token_kind_eq(TKind::Let);
+        self.identifier();
+        self.token_kind_eq(TKind::Equal);
+        let expr = self.expr();
+        self.token_kind_eq(TKind::In);
+        let body = self.expr();
+        
+        todo!();
+    }
+
+    fn expr(&mut self) -> Result<Expr, ()> {
+        let start = self.index;
+        let res = match try_kind(self.tokens.get(self.index)) {
+            Some(TKind::Let) => self.let_expr(),
             _ => self.parse_precedence(Precedence::LOWEST),
-        })();
+        };
         if res.is_err() {
-            self.make_error(ParseErrorKind::ExpectedExpression, start, self.index);
+            self.report_error(ParseErrorKind::ExpectedExpression, start);
         }
         res
     }
 
-    fn parse_assign_name(&mut self) -> Result<Rc<str>, ()> {
-        let start = self.index;
-        match try_kind(self.tokens.get(self.index)) {
-            Some(TokenKind::Identifier(name)) => {
-                self.index += 1;
-                self.expect_kind(&TokenKind::Equal);
-                Ok(name.clone())
-            }
-            _ => {
-                self.skip_until_kind(&TokenKind::Equal);
-                self.make_error(ParseErrorKind::ExpectedIdentifier, start, self.index);
-                Err(())
-            }
+    pub fn program(&mut self) -> Result<Program, ()> {
+        // Edge case - empty file
+        if self.tokens.is_empty() {
+            self.report_error_here(ParseErrorKind::EmptyCode);
+            return Err(())
         }
-    }
 
-    fn skip_until_kind(&mut self, kind: &TokenKind) {
-        while let Some(token) = self.tokens.get(self.index) {
-            if token.kind == *kind {
-                break;
-            }
-            self.index += 1;
+        let body = self.expr();
+        if self.in_range() {
+            self.report_error_here(ParseErrorKind::LeftoverSource);
         }
-    }
-
-    fn expect_kind(&mut self, kind: &TokenKind) {
-        if try_kind(self.tokens.get(self.index)) != Some(&kind) {
-            self.make_error(
-                ParseErrorKind::ExpectedToken(kind.clone()),
-                self.index,
-                self.index,
-            );
-        }
-        self.index += 1;
+        body.map(|body| Program { body })
     }
 }
 
