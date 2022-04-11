@@ -298,14 +298,22 @@ impl<'a> Parser<'a> {
 
     fn let_expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
-        self.token_kind_eq(TKind::Let);
-        self.identifier();
-        self.token_kind_eq(TKind::Equal);
-        let expr = self.expr();
-        self.token_kind_eq(TKind::In);
+        let _ = self.token_kind_eq(TKind::Let);
+        let name = self.identifier();
+        let _ = self.token_kind_eq(TKind::Equal);
+        let binding = self.expr();
+        let _ = self.token_kind_eq(TKind::In);
         let body = self.expr();
         
-        todo!();
+        Ok(self.make_expr(
+            start,
+            ExprKind::Let { 
+                name: name?, 
+                unique_name: None,
+                binding: Box::new(binding?),
+                expr: Box::new(body?),
+            },
+        ))
     }
 
     fn expr(&mut self) -> Result<Expr, ()> {
