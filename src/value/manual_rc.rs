@@ -68,7 +68,11 @@ where
     pub unsafe fn new(value: &T) -> Self {
         println!("Newing a value");
         let header = value.header();
-        let layout = T::layout(&header);
+        let layout = {
+            Layout::new::<ManualRcBoxHead<T>>()
+                .extend(T::layout(&header)).unwrap().0
+                .pad_to_align()
+        };
         let ptr = P::new(alloc(layout)).unwrap();
         {
             let mut ptr = T::from_ptr(&header, ptr);
@@ -141,7 +145,7 @@ where
     }
 
     fn layout(_: &Self::Header) -> Layout {
-        Layout::new::<ManualRcBox<T>>()
+        Layout::new::<T>()
     }
 
     unsafe fn from_ptr(_: &Self::Header, mem: P<u8>) -> P<ManualRcBox<T>> {
@@ -164,7 +168,7 @@ where
     }
 
     fn layout(header: &Self::Header) -> Layout {
-        Layout::array::<T>(*header).unwrap()
+         Layout::array::<T>(*header).unwrap()
     }
 
     unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<[T]>> {
@@ -190,7 +194,7 @@ impl ManualRcBoxable for str {
     }
 
     fn layout(header: &Self::Header) -> Layout {
-        Layout::for_value(header)
+        Layout::array::<u8>(*header).unwrap()
     }
 
     unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<str>> {
