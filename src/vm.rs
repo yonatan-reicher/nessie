@@ -146,6 +146,17 @@ impl VM {
                 unsafe { string_value.string.inc_ref() };
                 self.stack.push(string_value);
             }
+            Instruction::Jump(offset) => {
+                *ip += offset as usize;
+            }
+            Instruction::JumpIfFalse(offset) => {
+                let value = self.stack.pop().unwrap();
+                unsafe { 
+                    if !value.boolean {
+                        *ip += offset as usize;
+                    }
+                }
+            }
         }
         *ip += 1;
 

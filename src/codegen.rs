@@ -70,28 +70,30 @@ impl Compiler {
     }
 
     pub fn emit_expr(&mut self, expr: &Expr, chunk: &mut Chunk) {
+        type EKind = ExprKind;
+
         let frame_offset = self.frame_offset;
         match &expr.kind {
-            &ExprKind::Int(int) => {
+            &EKind::Int(int) => {
                 let constant = chunk.write_constant(Value { int });
                 chunk.write(Instruction::Constant(constant), expr.span.line);
             }
-            ExprKind::True => {
+            EKind::True => {
                 chunk.write(Instruction::True, expr.span.line);
             }
-            ExprKind::False => {
+            EKind::False => {
                 chunk.write(Instruction::False, expr.span.line);
             }
-            ExprKind::String(string) => unsafe {
+            EKind::String(string) => unsafe {
                 let constant = chunk.write_constant(Value::new_string(string));
                 chunk.write(Instruction::Constant(constant), expr.span.line);
             },
-            ExprKind::Paren(e) => self.emit_expr(&e, chunk),
-            ExprKind::Unary(op, e) => {
+            EKind::Paren(e) => self.emit_expr(&e, chunk),
+            EKind::Unary(op, e) => {
                 self.emit_expr(&e, chunk);
                 chunk.write(unary_op_instruction(*op), expr.span.line);
             }
-            ExprKind::Binary(op, l, r) => {
+            EKind::Binary(op, l, r) => {
                 // Write the two operands to the stack
                 self.emit_expr(&l, chunk);
                 self.emit_expr(&r, chunk);
@@ -102,7 +104,7 @@ impl Compiler {
                 // After the binary operation, the stack has been reduced by one
                 self.frame_offset -= 1;
             }
-            ExprKind::Let {
+            EKind::Let {
                 name: _,
                 unique_name,
                 binding,
@@ -116,7 +118,7 @@ impl Compiler {
                 self.emit_expr(&e, chunk);
                 self.emit_stack_drop_above(binding.ty.as_ref().unwrap(), binding.span.line, chunk);
             }
-            ExprKind::Var(_, unique_name) => {
+            EKind::Var(_, unique_name) => {
                 match self.variables[unique_name.as_ref().unwrap()] {
                     Location::FrameOffset(offset) => {
                         self.emit_stack_get(
@@ -127,6 +129,29 @@ impl Compiler {
                         );
                     }
                 }
+            }
+            EKind::If {
+                cond,
+                then,
+                else_,
+            } => {
+                self.emit_expr(&cond, chunk);
+                let cond_jmp_index = chunk.instructions().len();
+                chunk.write(Instruction::JumpIfFalse(0), expr.span.line);
+                let (then_len, jmp_index) = {
+                    let instructions_start_length = chunk.instructions().len();
+                    self.emit_expr(&then, chunk);
+                    let jmp_index = chunk.instructions().len();
+                    chunk.write(Instruction::Jump(0), expr.span.line);
+                    (chunk.instructions().len() - instructions_start_length, jmp_index)
+                };
+                let else_len = {
+                    let instructions_start_length = chunk.instructions().len();
+                    self.emit_expr(&else_, chunk);
+                    chunk.instructions().len() - instructions_start_length
+                };
+                chunk.instructions_mut()[cond_jmp_index] = Instruction::JumpIfFalse(then_len as u16);
+                chunk.instructions_mut()[jmp_index] = Instruction::Jump(else_len as u16);
             }
         }
         self.frame_offset = frame_offset + 1;

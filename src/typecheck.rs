@@ -229,6 +229,12 @@ impl Env {
                     })
                 }
             }
+            ExprKind::If { cond, then, else_ } => {
+                let _ = self.expect_visit(cond, Type::BOOL);
+                self.visit(then)?;
+                self.expect_visit(else_, then.ty.clone().unwrap())?;
+                expr.ty = then.ty.clone();
+            }
         }
         Ok(())
     }

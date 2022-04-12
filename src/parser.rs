@@ -316,10 +316,30 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    fn if_expr(&mut self) -> Result<Expr, ()> {
+        let start = self.index;
+        let _ = self.token_kind_eq(TKind::If);
+        let cond = self.expr();
+        let _ = self.token_kind_eq(TKind::Then);
+        let then = self.expr();
+        let _ = self.token_kind_eq(TKind::Else);
+        let else_ = self.expr();
+
+        Ok(self.make_expr(
+            start,
+            ExprKind::If {
+                cond: Box::new(cond?),
+                then: Box::new(then?),
+                else_: Box::new(else_?),
+            },
+        ))
+    }
+
     fn expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
         let res = match try_kind(self.tokens.get(self.index)) {
             Some(TKind::Let) => self.let_expr(),
+            Some(TKind::If) => self.if_expr(),
             _ => self.parse_precedence(Precedence::LOWEST),
         };
         if res.is_err() {

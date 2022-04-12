@@ -43,6 +43,12 @@ pub enum ExprKind {
     },
     /// A variable
     Var(Rc<str>, Option<UniqueName>),
+    /// A conditional expression
+    If {
+        cond: Box<Expr>,
+        then: Box<Expr>,
+        else_: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

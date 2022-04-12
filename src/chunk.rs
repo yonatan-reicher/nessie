@@ -51,6 +51,11 @@ pub enum Instruction {
     PrimitiveGetLocal(u16),
     /// Pushes a string value onto the stack.
     StringGetLocal(u16),
+    /// Jumps the specified number of instructions forward unconditionally.
+    Jump(u16),
+    /// Jumps the specified number of instructions forward, if the value on the
+    /// top of the stack it consumes is a false.
+    JumpIfFalse(u16),
 }
 
 impl Display for Instruction {
@@ -61,6 +66,7 @@ impl Display for Instruction {
 }
 
 /// A sequence of byte code instructions with their parameters and line numbers.
+#[derive(Debug, Clone)]
 pub struct Chunk {
     instructions: Vec<Instruction>,
     instruction_lines: Vec<Line>,
@@ -89,6 +95,10 @@ impl Chunk {
 
     pub fn instructions(&self) -> &[Instruction] {
         &self.instructions
+    }
+
+    pub fn instructions_mut(&mut self) -> &mut [Instruction] {
+        &mut self.instructions
     }
 
     pub fn instruction_lines(&self) -> &[Line] {

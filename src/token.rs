@@ -115,6 +115,7 @@ make_token_kind! {
     Let let,
     In in,
     If if,
+    Then then,
     Else else,
     And and,
     Or or,
