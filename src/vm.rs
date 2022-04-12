@@ -274,4 +274,40 @@ mod tests {
         unsafe { assert_eq!(vm.stack.pop().unwrap().int, 5) };
         assert_eq!(vm.stack.len(), 0);
     }
+
+    #[test]
+    fn if_true() {
+        let program = prog(indoc! {"
+            if 1 == 1 then
+                2
+            else
+                3
+        "});
+
+        disassamble(&program, "if_true");
+
+        let mut vm = VM::new();
+        vm.run(&program);
+
+        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 2) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn if_false() {
+        let program = prog(indoc! {"
+            if 1 == 2 then
+                2
+            else
+                3
+        "});
+
+        disassamble(&program, "if_false");
+
+        let mut vm = VM::new();
+        vm.run(&program);
+
+        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 3) };
+        assert_eq!(vm.stack.len(), 0);
+    }
 }
