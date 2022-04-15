@@ -216,7 +216,7 @@ impl Compiler {
                 local_variables.insert(unique_arg_name.clone().unwrap(), 0);
                 // Point the compiler to this function and then switch back here
                 let old_compile_to = mem::replace(&mut self.compile_to, CompileTo::Function(function));
-                let old_local_variables = mem::replace(&mut self.frame_variables, HashMap::new());
+                let old_local_variables = mem::replace(&mut self.frame_variables, local_variables);
                 let old_stack_offset = mem::replace(&mut self.frame_offset, 0);
                 // Emit the body at the function's chunk
                 self.emit_expr(&body);

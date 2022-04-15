@@ -6,14 +6,14 @@ use crate::token::prelude::*;
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
-type TKind = TokenKind;
+pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<ParseError>> {
+    let mut parser = Parser::new(tokens);
 
-struct Parser<'a> {
-    tokens: &'a [Token],
-    index: usize,
-    errors: Vec<ParseError>,
+    match parser.program() {
+        Ok(program) if parser.errors.is_empty() => Ok(program),
+        _ => Err(parser.errors),
+    }
 }
-
 
 #[derive(Debug)]
 pub enum ParseErrorKind {
@@ -61,18 +61,13 @@ impl SourceError for ParseError {
     }
 }
 
+type TKind = TokenKind;
 
-pub fn parse<'a>(tokens: &[Token]) -> Result<Program, Vec<ParseError>> {
-    let mut parser = Parser {
-        tokens,
-        index: 0,
-        errors: Vec::new(),
-    };
-
-    match parser.program() {
-        Ok(program) if parser.errors.is_empty() => Ok(program),
-        _ => Err(parser.errors),
-    }
+#[derive(Debug)]
+struct Parser<'a> {
+    tokens: &'a [Token],
+    index: usize,
+    errors: Vec<ParseError>,
 }
 
 fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
@@ -116,31 +111,37 @@ impl Precedence {
 }
 
 fn get_binary_operator(token: &Token) -> Option<(Precedence, BinaryOp)> {
-    use BinaryOp::*;
-    use Precedence::*;
-    use TokenKind::*;
-
+    type B = BinaryOp;
+    type P = Precedence;
     match &token.kind {
-        Plus => Some((Term, Add)),
-        Minus => Some((Term, Sub)),
-        Star => Some((Factor, Mul)),
-        Slash => Some((Factor, Div)),
-        Percent => Some((Factor, Mod)),
-        TokenKind::And => Some((Precedence::And, BinaryOp::And)),
-        TokenKind::Or => Some((Precedence::Or, BinaryOp::Or)),
-        TokenKind::Xor => Some((Precedence::Xor, BinaryOp::Xor)),
-        EqualEqual => Some((Equality, BinaryOp::Eq)),
-        BangEqual => Some((Equality, BinaryOp::Ne)),
-        Lesser => Some((Comparison, BinaryOp::Lt)),
-        Greater => Some((Comparison, BinaryOp::Gt)),
-        LesserEqual => Some((Comparison, BinaryOp::Le)),
-        GreaterEqual => Some((Comparison, BinaryOp::Ge)),
-        PlusPlus => Some((Term, Concat)),
+        TKind::Plus => Some((P::Term, B::Add)),
+        TKind::Minus => Some((P::Term, B::Sub)),
+        TKind::Star => Some((P::Factor, B::Mul)),
+        TKind::Slash => Some((P::Factor, B::Div)),
+        TKind::Percent => Some((P::Factor, B::Mod)),
+        TKind::And => Some((P::And, B::And)),
+        TKind::Or => Some((P::Or, B::Or)),
+        TKind::Xor => Some((P::Xor, B::Xor)),
+        TKind::EqualEqual => Some((P::Equality, B::Eq)),
+        TKind::BangEqual => Some((P::Equality, B::Ne)),
+        TKind::Lesser => Some((P::Comparison, B::Lt)),
+        TKind::Greater => Some((P::Comparison, B::Gt)),
+        TKind::LesserEqual => Some((P::Comparison, B::Le)),
+        TKind::GreaterEqual => Some((P::Comparison, B::Ge)),
+        TKind::PlusPlus => Some((P::Term, B::Concat)),
         _ => None,
     }
 }
 
 impl<'a> Parser<'a> {
+    pub fn new(tokens: &'a [Token]) -> Self {
+        Self {
+            tokens,
+            index: 0,
+            errors: Vec::new(),
+        }
+    }
+
     fn skip_until_kind(&mut self, kind: &TokenKind) {
         while let Some(token) = self.tokens.get(self.index) {
             if token.kind == *kind {
@@ -156,7 +157,9 @@ impl<'a> Parser<'a> {
 
     fn span_from_token_indices(&self, start: usize, end: usize) -> Span {
         // Edge case - no tokens at all
-        if self.tokens.is_empty() { return Span::empty(0, 0); }
+        if self.tokens.is_empty() {
+            return Span::empty(0, 0);
+        }
 
         let max_index = self.tokens.len() - 1;
         let start = start.clamp(0, max_index);
@@ -304,11 +307,11 @@ impl<'a> Parser<'a> {
         let binding = self.expr();
         let _ = self.token_kind_eq(TKind::In);
         let body = self.expr();
-        
+
         Ok(self.make_expr(
             start,
-            ExprKind::Let { 
-                name: name?, 
+            ExprKind::Let {
+                name: name?,
                 unique_name: None,
                 binding: Box::new(binding?),
                 expr: Box::new(body?),
@@ -335,12 +338,40 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    fn func_expr(&mut self) -> Result<Option<Expr>, ()> {
+        let start = self.index;
+        let errors = self.errors.len();
+        let arg_name = self.identifier();
+        if self.token_kind_eq(TKind::Arrow).is_ok() {
+            let body = self.expr();
+            Ok(Some(self.make_expr(
+                start,
+                ExprKind::Function {
+                    arg_name: arg_name?,
+                    unique_arg_name: None,
+                    body: Box::new(body?),
+                },
+            )))
+        } else {
+            // rollback
+            self.index = start;
+            self.errors.truncate(errors);
+            Ok(None)
+        }
+    }
+
     fn expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
         let res = match try_kind(self.tokens.get(self.index)) {
             Some(TKind::Let) => self.let_expr(),
             Some(TKind::If) => self.if_expr(),
-            _ => self.parse_precedence(Precedence::LOWEST),
+            _ => {
+                if let Ok(Some(func)) = self.func_expr() {
+                    Ok(func)
+                } else {
+                    self.parse_precedence(Precedence::LOWEST)
+                }
+            }
         };
         if res.is_err() {
             self.report_error(ParseErrorKind::ExpectedExpression, start);
@@ -352,7 +383,7 @@ impl<'a> Parser<'a> {
         // Edge case - empty file
         if self.tokens.is_empty() {
             self.report_error_here(ParseErrorKind::EmptyCode);
-            return Err(())
+            return Err(());
         }
 
         let body = self.expr();
