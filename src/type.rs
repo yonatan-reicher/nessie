@@ -1,3 +1,6 @@
+use std::fmt::{self, Display, Formatter};
+use std::rc::Rc;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
     pub kind: TypeKind,
@@ -8,21 +11,23 @@ pub enum TypeKind {
     Int,
     Bool,
     String,
+    Function { arg: Rc<Type>, ret: Rc<Type> },
 }
 
-impl std::fmt::Display for TypeKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Display for TypeKind {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         use TypeKind::*;
         match self {
             Int => write!(f, "int"),
             Bool => write!(f, "bool"),
             String => write!(f, "string"),
+            Function { arg, ret } => write!(f, "({} -> {})", arg, ret),
         }
     }
 }
 
-impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -37,4 +42,10 @@ impl Type {
     pub const STRING: Type = Type {
         kind: TypeKind::String,
     };
+
+    pub fn function(arg: Rc<Type>, ret: Rc<Type>) -> Type {
+        Type {
+            kind: TypeKind::Function { arg, ret },
+        }
+    }
 }

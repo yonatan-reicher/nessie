@@ -43,14 +43,16 @@ pub enum Instruction {
     BoolNe,
     StringEq,
     StringNe,
+    PtrEq,
+    PtrNe,
     /// Drops a primitive value placed one before the last value on the stack
     PrimitiveDropAbove,
-    /// Drops a string value placed one before the uppermost value on the stack
-    StringDropAbove,
+    /// Drops a pointer value placed one before the uppermost value on the stack
+    PtrDropAbove,
     /// Pushes a primitive value onto the stack.
     PrimitiveGetLocal(u16),
-    /// Pushes a string value onto the stack.
-    StringGetLocal(u16),
+    /// Pushes a pointer value onto the stack.
+    PtrGetLocal(u16),
     /// Jumps the specified number of instructions forward unconditionally.
     Jump(u16),
     /// Jumps the specified number of instructions forward, if the value on the
@@ -66,7 +68,7 @@ impl Display for Instruction {
 }
 
 /// A sequence of byte code instructions with their parameters and line numbers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Chunk {
     instructions: Vec<Instruction>,
     instruction_lines: Vec<Line>,
@@ -82,6 +84,7 @@ impl Chunk {
         }
     }
 
+    /// Adds a new instruction to the chunk with the given line information.
     pub fn write(&mut self, op: Instruction, line: Line) {
         self.instructions.push(op);
         self.instruction_lines.push(line);

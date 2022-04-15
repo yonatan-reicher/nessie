@@ -37,7 +37,7 @@ impl VM {
 
     /// Executes a single instruction.
     pub fn run_single(&mut self, instruction: Instruction, chunk: &Chunk, ip: &mut usize) {
-        macro_rules! binary_operation {
+        macro_rules! binary {
             ($x: tt, $field:ident, $return_field:ident) => {{
                 unsafe {
                     let b = self.stack.pop().unwrap().$field;
@@ -47,13 +47,38 @@ impl VM {
             }}
         }
 
-        macro_rules! unary_operation {
+        macro_rules! unary {
             ($x: tt, $field:ident, $return_field:ident) => {{
                 unsafe {
                     let a = self.stack.pop().unwrap().$field;
                     self.stack.push(Value { $return_field: $x a });
                 }
             }}
+        }
+
+        macro_rules! ptr_binary {
+            ($return_function:ident, |$x:ident, $y:ident| $expr:expr, $field:ident.$($get:tt)+) => {{
+                unsafe {
+                    let mut b = self.stack.pop().unwrap().$field;
+                    let mut a = self.stack.pop().unwrap().$field;
+                    let $x = a.$($get)+;
+                    let $y = b.$($get)+;
+                    self.stack.push(Value::$return_function($expr));
+                    a.dec_ref();
+                    b.dec_ref();
+                }
+            }};
+            ($return_function:ident, $x: tt, $field:ident.$($get:tt)+) => {{
+                unsafe {
+                    let mut b = self.stack.pop().unwrap().$field;
+                    let mut a = self.stack.pop().unwrap().$field;
+                    self.stack.push(Value::$return_function(
+                            a.$($get)+ $x b.$($get)+
+                    ));
+                    a.dec_ref();
+                    b.dec_ref();
+                }
+            }};
         }
 
         // execute the instruction
@@ -73,53 +98,31 @@ impl VM {
                 println!("{:?}", value);
             }
             // int operations
-            Instruction::Add => binary_operation!(+, int, int),
-            Instruction::Sub => binary_operation!(-, int, int),
-            Instruction::Mul => binary_operation!(*, int, int),
-            Instruction::Div => binary_operation!(/, int, int),
-            Instruction::Mod => binary_operation!(%, int, int),
-            Instruction::Neg => unary_operation!(-, int, int),
+            Instruction::Add => binary!(+, int, int),
+            Instruction::Sub => binary!(-, int, int),
+            Instruction::Mul => binary!(*, int, int),
+            Instruction::Div => binary!(/, int, int),
+            Instruction::Mod => binary!(%, int, int),
+            Instruction::Neg => unary!(-, int, int),
             // bool operations
-            Instruction::And => binary_operation!(&&, boolean, boolean),
-            Instruction::Or => binary_operation!(||, boolean, boolean),
-            Instruction::Xor => binary_operation!(^, boolean, boolean),
-            Instruction::Not => unary_operation!(!, boolean, boolean),
+            Instruction::And => binary!(&&, boolean, boolean),
+            Instruction::Or => binary!(||, boolean, boolean),
+            Instruction::Xor => binary!(^, boolean, boolean),
+            Instruction::Not => unary!(!, boolean, boolean),
             // comparison operations
-            Instruction::IntEq => binary_operation!(==, int, boolean),
-            Instruction::BoolEq => binary_operation!(==, boolean, boolean),
-            Instruction::IntNe => binary_operation!(!=, int, boolean),
-            Instruction::BoolNe => binary_operation!(!=, boolean, boolean),
-            Instruction::Lt => binary_operation!(<, int, boolean),
-            Instruction::Le => binary_operation!(<=, int, boolean),
-            Instruction::Gt => binary_operation!(>, int, boolean),
-            Instruction::Ge => binary_operation!(>=, int, boolean),
-            // string equality is implemented differently
-            Instruction::StringEq => unsafe {
-                let mut b = self.stack.pop().unwrap().string;
-                let mut a = self.stack.pop().unwrap().string;
-                self.stack.push(Value {
-                    boolean: a.get() == b.get(),
-                });
-                a.dec_ref();
-                b.dec_ref();
-            },
-            Instruction::StringNe => unsafe {
-                let mut b = self.stack.pop().unwrap().string;
-                let mut a = self.stack.pop().unwrap().string;
-                self.stack.push(Value {
-                    boolean: a.get() != b.get(),
-                });
-                a.dec_ref();
-                b.dec_ref();
-            },
-            Instruction::Concat => unsafe {
-                let mut b = self.stack.pop().unwrap().string;
-                let mut a = self.stack.pop().unwrap().string;
-                let concatinated = a.get().to_string() + b.get();
-                self.stack.push(Value::new_string(&concatinated));
-                a.dec_ref();
-                b.dec_ref();
-            },
+            Instruction::IntEq => binary!(==, int, boolean),
+            Instruction::IntNe => binary!(!=, int, boolean),
+            Instruction::BoolEq => binary!(==, boolean, boolean),
+            Instruction::BoolNe => binary!(!=, boolean, boolean),
+            Instruction::StringEq => ptr_binary!(new_boolean, ==, string.get()),
+            Instruction::StringNe => ptr_binary!(new_boolean, !=, string.get()),
+            Instruction::PtrEq => ptr_binary!(new_boolean, ==, ptr.ptr()),
+            Instruction::PtrNe => ptr_binary!(new_boolean, !=, ptr.ptr()),
+            Instruction::Lt => binary!(<, int, boolean),
+            Instruction::Le => binary!(<=, int, boolean),
+            Instruction::Gt => binary!(>, int, boolean),
+            Instruction::Ge => binary!(>=, int, boolean),
+            Instruction::Concat => ptr_binary!(new_string, |x, y| &(x.to_string() + y), string.get()),
             // Variables
             Instruction::PrimitiveDropAbove => {
                 let top = self.stack.pop().unwrap();
@@ -128,7 +131,7 @@ impl VM {
                 // push back the top of the stack
                 self.stack.push(top);
             }
-            Instruction::StringDropAbove => {
+            Instruction::PtrDropAbove => {
                 let top = self.stack.pop().unwrap();
                 // take the string out
                 let mut string_value = self.stack.pop().unwrap();
@@ -141,7 +144,7 @@ impl VM {
                 let value = self.stack[offset as usize].clone();
                 self.stack.push(value);
             }
-            Instruction::StringGetLocal(offset) => {
+            Instruction::PtrGetLocal(offset) => {
                 let mut string_value = self.stack[offset as usize].clone();
                 unsafe { string_value.string.inc_ref() };
                 self.stack.push(string_value);
@@ -151,7 +154,7 @@ impl VM {
             }
             Instruction::JumpIfFalse(offset) => {
                 let value = self.stack.pop().unwrap();
-                unsafe { 
+                unsafe {
                     if !value.boolean {
                         *ip += offset as usize;
                     }
@@ -250,7 +253,7 @@ mod tests {
             let d = c * 2 in
             d - c
         "});
-        
+
         disassamble(&program, "let_program");
 
         let mut vm = VM::new();

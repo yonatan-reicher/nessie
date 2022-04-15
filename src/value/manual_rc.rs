@@ -86,6 +86,11 @@ where
         }
     }
 
+    /// Returns a pointer to the memory managed by this `ManualRc`.
+    pub fn ptr(&self) -> P<u8> {
+        self.ptr
+    }
+
     unsafe fn head(&self) -> P<ManualRcBoxHead<T>> {
         self.ptr.cast()
     }
@@ -129,6 +134,7 @@ where
         if self.ref_count() == 0 {
             // Drop the value and free the memory
             println!("Dropping value");
+            ptr::drop_in_place(self.get_mut());
             dealloc(self.ptr.as_ptr(), T::layout(self.header()));
         }
     }

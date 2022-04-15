@@ -2,18 +2,34 @@
 //! like identifiers
 
 use crate::ast::*;
-use crate::r#type::Type;
+use crate::r#type::{Type, TypeKind};
 use crate::source_error::SourceError;
 use crate::token::Span;
 use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 use vec1::*;
+
+
+type EKind = ExprKind;
+
+type TKind = TypeKind;
 
 #[derive(Debug)]
 pub enum TypeErrorKind {
     OperatorTypeMissmatch { expected: Type, found: Type },
     ProgramTypeUnknown,
     UndefinedVariable(Rc<str>),
+}
+
+#[derive(Debug)]
+pub struct TypeError {
+    pub kind: TypeErrorKind,
+    pub span: Span,
+}
+
+pub fn typecheck(program: &mut Program) -> Result<(), Vec<TypeError>> {
+    Env::new().typecheck(program)
 }
 
 impl std::fmt::Display for TypeErrorKind {
@@ -37,12 +53,6 @@ impl std::fmt::Display for TypeErrorKind {
     }
 }
 
-#[derive(Debug)]
-pub struct TypeError {
-    pub kind: TypeErrorKind,
-    pub span: Span,
-}
-
 impl std::fmt::Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.kind)
@@ -55,10 +65,6 @@ impl SourceError for TypeError {
     fn get_span(&self) -> Span {
         self.span
     }
-}
-
-pub fn typecheck(program: &mut Program) -> Result<(), Vec<TypeError>> {
-    Env::new().typecheck(program)
 }
 
 struct Env {
@@ -234,6 +240,26 @@ impl Env {
                 self.visit(then)?;
                 self.expect_visit(else_, then.ty.clone().unwrap())?;
                 expr.ty = then.ty.clone();
+            }
+            EKind::Function {
+                arg_name,
+                unique_arg_name,
+                body,
+            } => {
+                // TODO: add an argument type field instead of hardcoding it
+                let arg_ty = Rc::new(Type::INT.clone());
+                *unique_arg_name = Some(self.declare_local(
+                    arg_name,
+                    Local {
+                        ty: Type::INT.clone(),
+                    },
+                ));
+                self.visit(body)?;
+                self.undeclare_local(arg_name);
+                expr.ty = Some(Type::function(
+                    arg_ty,
+                    Rc::new(body.ty.clone().unwrap()),
+                ));
             }
         }
         Ok(())

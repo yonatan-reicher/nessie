@@ -3,6 +3,7 @@ pub mod manual_rc;
 pub use self::manual_rc::ManualRc;
 
 use crate::r#type::*;
+use crate::chunk::Chunk;
 
 
 #[derive(Clone, Copy)]
@@ -10,6 +11,8 @@ pub union Value {
     pub int: i32,
     pub boolean: bool,
     pub string: ManualRc<str>,
+    pub function: ManualRc<Function>,
+    pub ptr: ManualRc<()>,
 }
 
 impl std::fmt::Debug for Value {
@@ -37,6 +40,15 @@ impl Value {
         Value { string: ManualRc::new(value) }
     }
 
+    /// Initializes a new function value.
+    /// # Safety
+    /// This function is copied to the heap, and must be manually memory managed.
+    pub unsafe fn new_function(function: Function) -> Self {
+        // TODO: Move the function instead of cloning it
+        let function = ManualRc::new(&function);
+        Value { function }
+    }
+
     /// Are two values equal?
     /// # Safety
     /// Behavior may be undefined if the values are not of the same type.
@@ -55,7 +67,24 @@ impl Value {
                 // uncount the string
                 self.string.dec_ref();
             },
+            TypeKind::Function { .. } => {
+                // uncount the function
+                self.function.dec_ref();
+            },
         }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Function {
+    pub chunk: Chunk,
+    pub name: Option<String>,
+}
+
+impl Function {
+    /// Creates a new empty function.
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

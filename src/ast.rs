@@ -49,6 +49,12 @@ pub enum ExprKind {
         then: Box<Expr>,
         else_: Box<Expr>,
     },
+    /// An anonymous function expression
+    Function {
+        arg_name: Rc<str>,
+        unique_arg_name: Option<UniqueName>,
+        body: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
