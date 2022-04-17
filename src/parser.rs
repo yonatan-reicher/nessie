@@ -6,6 +6,8 @@ use crate::token::prelude::*;
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
+type EKind = ExprKind;
+
 pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<ParseError>> {
     let mut parser = Parser::new(tokens);
 
@@ -74,18 +76,22 @@ fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
     token.map(|t| &t.kind)
 }
 
+/// Note: the meaning of precedence is not consistent. In this project, highest
+/// precedence is the most tightly bound. For example, `*` is higher precedence
+/// than `+`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Precedence {
     // Precedence from lowest to highest.
-    Or,         // or
-    Xor,        // xor
-    And,        // and
-    Equality,   // == !=
-    Comparison, // < > <= >=
-    Term,       // + - ++
-    Factor,     // * / %
-    Unary,      // ! -
-    Call,       // . ()
+    Or,             // or
+    Xor,            // xor
+    And,            // and
+    Equality,       // == !=
+    Comparison,     // < > <= >=
+    Term,           // + - ++
+    Factor,         // * / %
+    Application,    // x y
+    Unary,          // ! -
+    Call,           // . ()
     Atom,
 }
 
@@ -102,7 +108,8 @@ impl Precedence {
             Equality => Comparison,
             Comparison => Term,
             Term => Factor,
-            Factor => Unary,
+            Factor => Application,
+            Application => Unary,
             Unary => Call,
             Call => Atom,
             Atom => Atom,
@@ -178,13 +185,17 @@ impl<'a> Parser<'a> {
         self.report_error(kind, self.index)
     }
 
-    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
-        let span = self.span_from_token_indices(start_index, self.index - 1);
+    fn make_expr_at(&self, start_index: usize, end_index: usize, kind: ExprKind) -> Expr {
+        let span = self.span_from_token_indices(start_index, end_index - 1);
         Expr {
             span,
             kind,
             ty: None,
         }
+    }
+
+    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
+        self.make_expr_at(start_index, self.index, kind)
     }
 
     fn parse_atom(&mut self) -> Result<Option<Expr>, ()> {
@@ -243,15 +254,46 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_precedence(&mut self, lowest_precedence: Precedence) -> Result<Expr, ()> {
-        if let Precedence::Atom = lowest_precedence {
-            let atom = self.parse_atom()?;
-            return match atom {
-                Some(atom) => Ok(atom),
-                None => {
-                    self.report_error_here(ParseErrorKind::ExpectedExpressionAtom);
-                    Err(())
+    fn application_exprs(&mut self) -> Result<Option<Expr>, ()> {
+        let start = self.index;
+        // Collect the atoms
+        let mut atoms = Some(Vec::new());
+        loop {
+            match self.parse_atom() {
+                Ok(Some(atom)) => {
+                    if let Some(atoms) = &mut atoms {
+                        atoms.push((atom, self.index));
+                    }
                 }
+                Err(()) => {
+                    atoms = None;
+                }
+                // Stop condition
+                // TODO: stop at terminator tokens like parentheses or operators
+                Ok(None) => {
+                    break;
+                }
+            }
+        }
+        // Reduce to an expression
+        Ok(atoms.ok_or(())?.into_iter().reduce(
+            |(left, left_index), (right, right_index)| {
+                let kind = EKind::App {
+                    func: Box::new(left),
+                    arg: Box::new(right),
+                };
+                (self.make_expr_at(start, right_index, kind), right_index)
+            },
+        ).map(|(expr, _)| expr))
+    }
+
+    fn parse_precedence(&mut self, lowest_precedence: Precedence) -> Result<Expr, ()> {
+        if let Precedence::Application = lowest_precedence {
+            return if let Some(expr) = self.application_exprs()? {
+                Ok(expr)
+            } else {
+                self.report_error_here(ParseErrorKind::ExpectedExpressionAtom);
+                Err(())
             };
         }
 

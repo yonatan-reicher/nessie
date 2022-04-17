@@ -2,7 +2,7 @@
 
 use crate::token::Line;
 use crate::value::Value;
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 
 type ConstantIndex = u16;
 
@@ -58,10 +58,12 @@ pub enum Instruction {
     /// Jumps the specified number of instructions forward, if the value on the
     /// top of the stack it consumes is a false.
     JumpIfFalse(u16),
+    /// Pops a value and function off the stack and calls it with the value.
+    Call,
 }
 
 impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // fallback to Debug's displaying
         write!(f, "{:?}", self)
     }

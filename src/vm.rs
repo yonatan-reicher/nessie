@@ -1,10 +1,13 @@
 use crate::chunk::{Chunk, Instruction};
 use crate::disassemble::disassamble_instruction;
-use crate::value::Value;
+use crate::value::{Value, Function};
+
+type I = Instruction;
 
 /// A virtual machine is a stack-based interpreter for a chunk of bytecode.
 pub struct VM {
     pub stack: Vec<Value>,
+    pub frame_start: usize,
     debug_stream: Option<Box<dyn std::io::Write>>,
 }
 
@@ -12,6 +15,7 @@ impl VM {
     pub fn new() -> Self {
         Self {
             stack: Vec::new(),
+            frame_start: 0,
             debug_stream: None,
         }
     }
@@ -24,6 +28,13 @@ impl VM {
     /// Clear the debug stream for the virtual machine.
     pub fn clear_debug_stream(&mut self) {
         self.debug_stream = None;
+    }
+
+    unsafe fn run_function(&mut self, function: &Function) {
+        let old_frame_start = self.frame_start;
+        self.frame_start = self.stack.len() - 1;
+        self.run(&function.chunk);
+        self.frame_start = old_frame_start;
     }
 
     /// Executes the virtual machine.
@@ -81,88 +92,6 @@ impl VM {
             }};
         }
 
-        // execute the instruction
-        match instruction {
-            Instruction::Constant(constant) => {
-                let value = chunk.constants()[constant as usize];
-                self.stack.push(value);
-            }
-            Instruction::True => {
-                self.stack.push(Value { boolean: true });
-            }
-            Instruction::False => {
-                self.stack.push(Value { boolean: false });
-            }
-            Instruction::Return => {
-                let value = self.stack.pop().unwrap();
-                println!("{:?}", value);
-            }
-            // int operations
-            Instruction::Add => binary!(+, int, int),
-            Instruction::Sub => binary!(-, int, int),
-            Instruction::Mul => binary!(*, int, int),
-            Instruction::Div => binary!(/, int, int),
-            Instruction::Mod => binary!(%, int, int),
-            Instruction::Neg => unary!(-, int, int),
-            // bool operations
-            Instruction::And => binary!(&&, boolean, boolean),
-            Instruction::Or => binary!(||, boolean, boolean),
-            Instruction::Xor => binary!(^, boolean, boolean),
-            Instruction::Not => unary!(!, boolean, boolean),
-            // comparison operations
-            Instruction::IntEq => binary!(==, int, boolean),
-            Instruction::IntNe => binary!(!=, int, boolean),
-            Instruction::BoolEq => binary!(==, boolean, boolean),
-            Instruction::BoolNe => binary!(!=, boolean, boolean),
-            Instruction::StringEq => ptr_binary!(new_boolean, ==, string.get()),
-            Instruction::StringNe => ptr_binary!(new_boolean, !=, string.get()),
-            Instruction::PtrEq => ptr_binary!(new_boolean, ==, ptr.ptr()),
-            Instruction::PtrNe => ptr_binary!(new_boolean, !=, ptr.ptr()),
-            Instruction::Lt => binary!(<, int, boolean),
-            Instruction::Le => binary!(<=, int, boolean),
-            Instruction::Gt => binary!(>, int, boolean),
-            Instruction::Ge => binary!(>=, int, boolean),
-            Instruction::Concat => ptr_binary!(new_string, |x, y| &(x.to_string() + y), string.get()),
-            // Variables
-            Instruction::PrimitiveDropAbove => {
-                let top = self.stack.pop().unwrap();
-                // take the primitive value out
-                self.stack.pop();
-                // push back the top of the stack
-                self.stack.push(top);
-            }
-            Instruction::PtrDropAbove => {
-                let top = self.stack.pop().unwrap();
-                // take the string out
-                let mut string_value = self.stack.pop().unwrap();
-                // decrease reference count
-                unsafe { string_value.string.dec_ref() };
-                // place the top back
-                self.stack.push(top);
-            }
-            Instruction::PrimitiveGetLocal(offset) => {
-                let value = self.stack[offset as usize].clone();
-                self.stack.push(value);
-            }
-            Instruction::PtrGetLocal(offset) => {
-                let mut string_value = self.stack[offset as usize].clone();
-                unsafe { string_value.string.inc_ref() };
-                self.stack.push(string_value);
-            }
-            Instruction::Jump(offset) => {
-                *ip += offset as usize;
-            }
-            Instruction::JumpIfFalse(offset) => {
-                let value = self.stack.pop().unwrap();
-                unsafe {
-                    if !value.boolean {
-                        *ip += offset as usize;
-                    }
-                }
-            }
-        }
-        *ip += 1;
-
         // print debug information
         if let Some(ref mut debug_stream) = self.debug_stream {
             let stack_string = {
@@ -178,8 +107,95 @@ impl VM {
                 s.push_str("]");
                 s
             };
-            disassamble_instruction(debug_stream, chunk, *ip - 1, &stack_string).unwrap();
+            disassamble_instruction(debug_stream, chunk, *ip, &stack_string).unwrap();
         }
+
+        // execute the instruction
+        match instruction {
+            I::Constant(constant) => {
+                let value = chunk.constants()[constant as usize];
+                self.stack.push(value);
+            }
+            I::True => {
+                self.stack.push(Value { boolean: true });
+            }
+            I::False => {
+                self.stack.push(Value { boolean: false });
+            }
+            I::Return => {
+                let value = self.stack.pop().unwrap();
+                println!("{:?}", value);
+            }
+            // int operations
+            I::Add => binary!(+, int, int),
+            I::Sub => binary!(-, int, int),
+            I::Mul => binary!(*, int, int),
+            I::Div => binary!(/, int, int),
+            I::Mod => binary!(%, int, int),
+            I::Neg => unary!(-, int, int),
+            // bool operations
+            I::And => binary!(&&, boolean, boolean),
+            I::Or => binary!(||, boolean, boolean),
+            I::Xor => binary!(^, boolean, boolean),
+            I::Not => unary!(!, boolean, boolean),
+            // comparison operations
+            I::IntEq => binary!(==, int, boolean),
+            I::IntNe => binary!(!=, int, boolean),
+            I::BoolEq => binary!(==, boolean, boolean),
+            I::BoolNe => binary!(!=, boolean, boolean),
+            I::StringEq => ptr_binary!(new_boolean, ==, string.get()),
+            I::StringNe => ptr_binary!(new_boolean, !=, string.get()),
+            I::PtrEq => ptr_binary!(new_boolean, ==, ptr.ptr()),
+            I::PtrNe => ptr_binary!(new_boolean, !=, ptr.ptr()),
+            I::Lt => binary!(<, int, boolean),
+            I::Le => binary!(<=, int, boolean),
+            I::Gt => binary!(>, int, boolean),
+            I::Ge => binary!(>=, int, boolean),
+            I::Concat => ptr_binary!(new_string, |x, y| &(x.to_string() + y), string.get()),
+            // Variables
+            I::PrimitiveDropAbove => {
+                let top = self.stack.pop().unwrap();
+                // take the primitive value out
+                self.stack.pop();
+                // push back the top of the stack
+                self.stack.push(top);
+            }
+            I::PtrDropAbove => {
+                let top = self.stack.pop().unwrap();
+                // take the string out
+                let mut string_value = self.stack.pop().unwrap();
+                // decrease reference count
+                unsafe { string_value.string.dec_ref() };
+                // place the top back
+                self.stack.push(top);
+            }
+            I::PrimitiveGetLocal(offset) => {
+                let value = self.stack[self.frame_start + offset as usize].clone();
+                self.stack.push(value);
+            }
+            I::PtrGetLocal(offset) => {
+                let mut string_value = self.stack[self.frame_start + offset as usize].clone();
+                unsafe { string_value.string.inc_ref() };
+                self.stack.push(string_value);
+            }
+            I::Jump(offset) => {
+                *ip += offset as usize;
+            }
+            I::JumpIfFalse(offset) => {
+                let value = self.stack.pop().unwrap();
+                unsafe {
+                    if !value.boolean {
+                        *ip += offset as usize;
+                    }
+                }
+            }
+            I::Call => {
+                let mut function = unsafe { self.stack.pop().unwrap().function };
+                unsafe { self.run_function(function.get()) };
+                unsafe { function.dec_ref() };
+            }
+        }
+        *ip += 1;
     }
 }
 
@@ -211,7 +227,7 @@ mod tests {
     fn test_push_constant() {
         let mut chunk = Chunk::new();
         let num_index = chunk.write_constant(Value { int: 1 });
-        chunk.write(Instruction::Constant(num_index), 0);
+        chunk.write(I::Constant(num_index), 0);
 
         let mut vm = VM::new();
         vm.run(&chunk);
@@ -227,13 +243,13 @@ mod tests {
         let num_2_index = chunk.write_constant(Value { int: 5 });
         let num_3_index = chunk.write_constant(Value { int: 3 });
         let num_4_index = chunk.write_constant(Value { int: 9 });
-        chunk.write(Instruction::Constant(num_1_index), 110);
-        chunk.write(Instruction::Constant(num_2_index), 110);
-        chunk.write(Instruction::Add, 111);
-        chunk.write(Instruction::Constant(num_3_index), 112);
-        chunk.write(Instruction::Div, 113);
-        chunk.write(Instruction::Constant(num_4_index), 114);
-        chunk.write(Instruction::Sub, 115);
+        chunk.write(I::Constant(num_1_index), 110);
+        chunk.write(I::Constant(num_2_index), 110);
+        chunk.write(I::Add, 111);
+        chunk.write(I::Constant(num_3_index), 112);
+        chunk.write(I::Div, 113);
+        chunk.write(I::Constant(num_4_index), 114);
+        chunk.write(I::Sub, 115);
 
         disassamble(&chunk, "simple_arithmetic");
 

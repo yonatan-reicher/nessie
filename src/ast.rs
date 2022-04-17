@@ -55,6 +55,11 @@ pub enum ExprKind {
         unique_arg_name: Option<UniqueName>,
         body: Box<Expr>,
     },
+    /// An application expression
+    App {
+        func: Box<Expr>,
+        arg: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

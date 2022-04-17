@@ -20,6 +20,7 @@ pub enum TypeErrorKind {
     OperatorTypeMissmatch { expected: Type, found: Type },
     ProgramTypeUnknown,
     UndefinedVariable(Rc<str>),
+    NotAFunction(Type),
 }
 
 #[derive(Debug)]
@@ -32,8 +33,8 @@ pub fn typecheck(program: &mut Program) -> Result<(), Vec<TypeError>> {
     Env::new().typecheck(program)
 }
 
-impl std::fmt::Display for TypeErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for TypeErrorKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use TypeErrorKind::*;
         match self {
             OperatorTypeMissmatch { expected, found } => {
@@ -49,12 +50,15 @@ impl std::fmt::Display for TypeErrorKind {
             UndefinedVariable(name) => {
                 write!(f, "The variable '{name}' does not exist in this context")
             }
+            NotAFunction(t) => {
+                write!(f, "The type '{}' is not a function and cannot be applied", t)
+            }
         }
     }
 }
 
-impl std::fmt::Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Display for TypeError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -222,7 +226,6 @@ impl Env {
                 self.visit(body)?;
                 self.undeclare_local(name);
                 expr.ty = body.ty.clone();
-                // set the unique name
             }
             ExprKind::Var(name, unique_name) => {
                 if let Some(local) = self.locals.get(name) {
@@ -260,6 +263,28 @@ impl Env {
                     arg_ty,
                     Rc::new(body.ty.clone().unwrap()),
                 ));
+            }
+            EKind::App { func, arg } => {
+                let _ = self.visit(func);
+                match func.ty.as_ref().map(|ty| &ty.kind) {
+                    Some(TKind::Function {
+                        arg: arg_type,
+                        ret: ret_type,
+                    }) => {
+                        let _ = self.expect_visit(arg, arg_type.as_ref().clone());
+                        expr.ty = Some(ret_type.as_ref().clone());
+                    }
+                    Some(_) => {
+                        self.errors.push(TypeError {
+                            kind: TypeErrorKind::NotAFunction(func.ty.clone().unwrap()),
+                            span: expr.span,
+                        });
+                        Err(())?;
+                    }
+                    None => {
+                        Err(())?;
+                    }
+                }
             }
         }
         Ok(())

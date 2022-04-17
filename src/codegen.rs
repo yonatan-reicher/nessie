@@ -220,6 +220,7 @@ impl Compiler {
                 let old_stack_offset = mem::replace(&mut self.frame_offset, 0);
                 // Emit the body at the function's chunk
                 self.emit_expr(&body);
+                self.emit_stack_drop_above(&Type::INT, body.span.line); // TODO: change this
                 // Switch back
                 let function = mem::replace(&mut self.compile_to, old_compile_to);
                 let function = match function {
@@ -233,6 +234,17 @@ impl Compiler {
                 let value = unsafe { Value::new_function(function) };
                 let constant = self.chunk_mut().write_constant(value);
                 self.chunk_mut().write(I::Constant(constant), expr.span.line);
+            }
+            EKind::App {
+                func,
+                arg,
+            } => {
+                // Then - write the argument
+                self.emit_expr(&arg);
+                // First - write the function
+                self.emit_expr(&func);
+                // Then - call the function
+                self.chunk_mut().write(I::Call, expr.span.line);
             }
         }
         self.frame_offset = frame_offset + 1;
