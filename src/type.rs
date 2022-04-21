@@ -1,12 +1,12 @@
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Type {
     pub kind: TypeKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TypeKind {
     Int,
     Bool,
@@ -48,4 +48,8 @@ impl Type {
             kind: TypeKind::Function { arg, ret },
         }
     }
+}
+
+pub mod prelude {
+    pub use super::{Type, TypeKind};
 }

@@ -16,6 +16,7 @@ pub trait SourceError: Error {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceErrorWithSource<'a, 'b, T>
 where
     T: SourceError,

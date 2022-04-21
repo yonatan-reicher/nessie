@@ -1,32 +1,16 @@
-mod source_error;
-
-mod token;
-mod value;
-
-mod r#type;
-mod ast;
-mod chunk;
-
-mod lexer;
-mod parser;
-mod typecheck;
-mod codegen;
-mod vm;
-mod disassemble;
-
 mod cli;
 
 use std::path::Path;
 use std::io::{self, Write, stdin, stdout};
 use std::fs::read_to_string;
-use vm::VM;
-use lexer::{lex, Error as LexError};
-use parser::{parse, Error as ParseError};
-use typecheck::{typecheck, Error as TypeError};
-use codegen::compile;
-use value::Value;
-use r#type::Type;
-use source_error::SourceError;
+use nessie::vm::VM;
+use nessie::lexer::{lex, Error as LexError};
+use nessie::parser::{parse, Error as ParseError};
+use nessie::typecheck::{typecheck, Error as TypeError};
+use nessie::codegen::compile;
+use nessie::value::Value;
+use nessie::r#type::Type;
+use nessie::source_error::SourceError;
 
 
 #[derive(Debug)]
@@ -151,7 +135,7 @@ fn repl() -> io::Result<()> {
 }
 
 fn disassemble_file(file_path: &Path) -> io::Result<()> {
-    use disassemble::disassamble;
+    use nessie::disassemble::disassamble;
 
     let name = file_path.file_name().unwrap().to_str().unwrap();
     let source = read_to_string(file_path)?;

@@ -8,15 +8,7 @@ use string_intern::StringInterner;
 use std::fmt::{self, Display, Formatter};
 
 
-pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
-    let mut lexer = Lexer::new(source);
-    let mut tokens = Vec::new();
-    while let Some(token) = lexer.lex_token()? {
-        tokens.push(token);
-    }
-    Ok(tokens)
-}
-
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Lexer<'source> {
     source: &'source str,
     /// The current position of the lexer in the source code.
@@ -27,13 +19,13 @@ pub struct Lexer<'source> {
     interned_strings: StringInterner,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Error {
     pub kind: ErrorKind,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ErrorKind {
     InvalidCharacter(char),
     UnterminatedString,
@@ -72,6 +64,15 @@ fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '-'
 }
 
+
+pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
+    let mut lexer = Lexer::new(source);
+    let mut tokens = Vec::new();
+    while let Some(token) = lexer.lex_token()? {
+        tokens.push(token);
+    }
+    Ok(tokens)
+}
 
 impl<'source> Lexer<'source> {
     pub fn new(source: &'source str) -> Lexer<'source> {

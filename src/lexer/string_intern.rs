@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct StringInterner(HashSet<Rc<str>>);
 
 impl StringInterner {

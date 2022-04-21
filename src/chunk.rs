@@ -7,7 +7,7 @@ use std::fmt::{self, Display, Formatter};
 type ConstantIndex = u16;
 
 /// A C-like enum that represents the different types of instructions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum Instruction {
     /// Marks the end of a function's execution.
@@ -113,6 +113,10 @@ impl Chunk {
     pub fn constants(&self) -> &[Value] {
         &self.constants
     }
+}
+
+pub mod prelude {
+    pub use super::*;
 }
 
 #[cfg(test)]

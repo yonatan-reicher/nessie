@@ -49,8 +49,8 @@ fn binary_op_instruction(op: BinaryOp, arg_type: &Type) -> Instruction {
     }
 }
 
-#[derive(Debug)]
-struct Compiler {
+#[derive(Debug, Default, Clone)]
+pub struct Compiler {
     /// The current function being compiled. At the top level, this is just a
     /// chunk.
     compile_to: CompileTo,
@@ -60,10 +60,16 @@ struct Compiler {
     frame_offset: FrameOffset,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum CompileTo {
     Chunk(Chunk),
     Function(NessieFn),
+}
+
+impl Default for CompileTo {
+    fn default() -> Self {
+        CompileTo::Chunk(Chunk::new())
+    }
 }
 
 type FrameOffset = usize;
@@ -101,6 +107,7 @@ impl Compiler {
         self.chunk().instructions().len()
     }
 
+    /// Should be called before emitting the code to push it's initial value.
     fn add_local(&mut self, unique_name: UniqueName) {
         self.frame_variables.insert(unique_name, self.frame_offset);
     }
@@ -258,5 +265,10 @@ impl Compiler {
             CompileTo::Chunk(chunk) => chunk,
             _ => panic!("something went wrong during program compilation"),
         }
+    }
+
+    pub fn declare(&mut self, unique_name: UniqueName, ty: Type) {
+        self.add_local(unique_name);
+        self.frame_offset += 1;
     }
 }

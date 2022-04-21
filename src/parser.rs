@@ -19,7 +19,7 @@ pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<Error>> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {
     ExpectedExpression,
     ExpectedExpressionAtom,
@@ -32,7 +32,7 @@ pub enum ErrorKind {
     UnaryOperatorMissingOperand,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     pub kind: ErrorKind,
     pub span: Span,

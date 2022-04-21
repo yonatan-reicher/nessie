@@ -16,7 +16,7 @@ type TKind = TypeKind;
 
 type TEKind = TypeExprKind;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {
     OperatorTypeMissmatch { expected: Type, found: Type },
     ProgramTypeUnknown,
@@ -25,7 +25,7 @@ pub enum ErrorKind {
     UnknownType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     pub kind: ErrorKind,
     pub span: Span,
@@ -78,13 +78,14 @@ impl SourceError for Error {
     }
 }
 
-struct Env {
+#[derive(Debug, Clone)]
+pub struct Env {
     errors: Vec<Error>,
     locals: HashMap<Rc<str>, Vec1<Local>>,
     type_locals: HashMap<Rc<str>, Type>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Local {
     ty: Type,
 }
@@ -130,6 +131,12 @@ fn binary_op_types(op: BinaryOp) -> OperatorSignature {
         Eq => OperatorSignature::Comparison,
         Ne => OperatorSignature::Comparison,
         Concat => f(Type::STRING, Type::STRING),
+    }
+}
+
+impl Default for Env {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -399,4 +406,9 @@ impl Env {
         let shadow_count = self.locals.get(&name)?.len() - 1;
         Some(UniqueName { name, shadow_count })
     }
+
+    pub fn declare(&mut self, name: Rc<str>, ty: Type) -> UniqueName {
+        self.declare_local(&name, Local { ty })
+    }
+
 }

@@ -9,7 +9,7 @@ pub type Position = usize;
 pub type Line = usize;
 
 /// A span is a range of text within a source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
     /// Inclusive lower bound of the span.
     pub start: Position,
@@ -35,7 +35,7 @@ impl Span {
 }
 
 /// A token is a lexical unit meaning in a text.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
@@ -51,7 +51,7 @@ macro_rules! make_token_kind {
         $(-)+
         $($literal:ident $literal_type:ty,)+
     ) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum TokenKind {
             $($keyword,)*
             $($single_char_token,)*

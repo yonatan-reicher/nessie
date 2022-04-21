@@ -5,6 +5,7 @@ use crate::value::{Value, NessieFn, NativeFn, Function};
 type I = Instruction;
 
 /// A virtual machine is a stack-based interpreter for a chunk of bytecode.
+#[derive(Default)]
 pub struct VM {
     pub stack: Vec<Value>,
     pub frame_start: usize,

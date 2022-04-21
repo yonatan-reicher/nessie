@@ -1,16 +1,118 @@
-pub mod source_error;
-pub mod token;
-pub mod ast;
-pub mod chunk;
+//! Nessie - A typed, functional scripting language
+//!
+//! Nessie is an interpreted language that is typed and functional, which you
+//! can embed in your applications or use independently.
 
-pub mod lexer;
-pub mod parser;
-pub mod typecheck;
-pub mod codegen;
-pub mod vm;
-pub mod disassemble;
+// Internal modules:
 
-pub mod r#type;
-pub mod value;
+// data types
+mod token;
+mod value;
+mod r#type;
+mod ast;
+mod chunk;
 
+// pipeline stages
+mod lexer;
+mod parser;
+mod typecheck;
+mod codegen;
+mod vm;
+mod disassemble;
+mod source_error;
+
+use source_error::SourceError;
+use std::result;
+use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
+use std::rc::Rc;
+
+
+// Bring in the data types:
+pub use token::prelude::*;
+pub use value::prelude::*;
+pub use r#type::prelude::*;
+pub use ast::prelude::*;
+pub use chunk::prelude::*;
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Error {
+    pub kind: ErrorKind,
+    /// The original source code.
+    /// TODO: Save only the relevant part of the source code.
+    source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ErrorKind {
+    Lex(lexer::Error),
+    Parse(Vec<parser::Error>),
+    Typecheck(Vec<typecheck::Error>),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        use ErrorKind::*;
+        match &self.kind {
+            Lex(err) => {
+                writeln!(f, "Lexing error:")?;
+                writeln!(f, "{}", err.with_source(&self.source))?;
+            }
+            Parse(err) => {
+                writeln!(f, "Parsing errors:")?;
+                for e in err {
+                    writeln!(f, "{}", e.with_source(&self.source))?;
+                }
+            }
+            Typecheck(errors) => {
+                writeln!(f, "Type errors:")?;
+                for e in errors {
+                    writeln!(f, "{}", e.with_source(&self.source))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for Error {}
+
+pub type Result<T> = result::Result<T, Box<dyn source_error::SourceError>>;
+
+#[derive(Default)]
+pub struct Engine {
+    /// The typechecking context.
+    env: typecheck::Env,
+    /// The code generation context.
+    compiler: codegen::Compiler,
+    /// The code execution context.
+    vm: vm::VM,
+}
+
+/// A program that is well typed
+pub struct TypedProgram(Program);
+
+impl Engine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn declare(&mut self, name: Rc<str>, ty_: Type, value: Value) {
+        let unique_name = self.env.declare(name, ty_.clone());
+        self.compiler.declare(unique_name, ty_.clone());
+        self.vm.stack.push(value);
+    }
+
+    //pub fn typecheck(&mut self, mut program: Program) -> Result<TypedProgram> {
+    //    self.env.typecheck(&mut program).map_err(Error::Kind)?;
+    //}
+    //
+    //pub fn eval(&mut self, source_code: &str) -> Result<Value> {
+    //    let tokens = lexer::lex(source_code)?;
+    //    let ast = parser::parse(&tokens)?;
+    //
+    //    Ok()
+    //}
+}
 

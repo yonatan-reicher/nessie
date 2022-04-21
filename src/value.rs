@@ -2,10 +2,9 @@ pub mod manual_rc;
 
 pub use self::manual_rc::ManualRc;
 
-use crate::r#type::*;
 use crate::chunk::Chunk;
-use std::fmt::{self, Debug, Display, Formatter};
-
+use crate::r#type::*;
+use std::fmt::{self, Debug, Formatter};
 
 #[derive(Clone, Copy)]
 pub union Value {
@@ -38,7 +37,9 @@ impl Value {
     /// # Safety
     /// This string is copied to the heap, and must be manually memory managed.
     pub unsafe fn new_string(value: &str) -> Self {
-        Value { string: ManualRc::new(value) }
+        Value {
+            string: ManualRc::new(value),
+        }
     }
 
     /// Initializes a new function value.
@@ -62,27 +63,27 @@ impl Value {
     /// The type provided must fit the value.
     pub unsafe fn free(&mut self, ty: Type) {
         match ty.kind {
-            TypeKind::Int => {},
-            TypeKind::Bool => {},
+            TypeKind::Int => {}
+            TypeKind::Bool => {}
             TypeKind::String => {
                 // uncount the string
                 self.string.dec_ref();
-            },
+            }
             TypeKind::Function { .. } => {
                 // uncount the function
                 self.function.dec_ref();
-            },
+            }
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub enum Function {
     Nessie(NessieFn),
     Native(NativeFn),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct NessieFn {
     pub chunk: Chunk,
     pub name: Option<String>,
@@ -95,7 +96,7 @@ impl NessieFn {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NativeFn {
     pub name: String,
     pub function: fn(Value) -> Value,
@@ -107,6 +108,9 @@ impl Debug for NativeFn {
     }
 }
 
+pub mod prelude {
+    pub use super::{ManualRc, Value};
+}
 
 #[cfg(test)]
 mod tests {
@@ -143,4 +147,3 @@ mod tests {
         }
     }
 }
-

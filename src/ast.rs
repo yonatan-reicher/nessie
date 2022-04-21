@@ -6,19 +6,19 @@ use crate::r#type::Type;
 use crate::token::Span;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Program {
     pub body: Expr,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
     pub ty: Option<Type>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExprKind {
     /// An integer literal
     Int(i32),
@@ -61,7 +61,7 @@ pub enum ExprKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NameDeclaration {
     /// The name of the variable as is written in the source code.
     pub name: Rc<str>,
@@ -85,19 +85,19 @@ impl NameDeclaration {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeExpr {
     pub kind: TypeExprKind,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TypeExprKind {
     Var(Rc<str>),
     Function(Box<TypeExpr>, Box<TypeExpr>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UniqueName {
     /// The original name in the source code
     pub name: Rc<str>,
@@ -105,7 +105,7 @@ pub struct UniqueName {
     pub shadow_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BinaryOp {
     // Int operators
     Add,
@@ -128,10 +128,14 @@ pub enum BinaryOp {
     Ge,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UnaryOp {
     // Int operators
     Neg,
     // Boolean operators
     Not,
+}
+
+pub mod prelude {
+    pub use super::*;
 }
