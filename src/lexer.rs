@@ -5,7 +5,7 @@ mod string_intern;
 use crate::token::prelude::*;
 use crate::source_error::SourceError;
 use string_intern::StringInterner;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fmt::{self, Display, Formatter};
 
 
 pub struct Lexer<'source> {
@@ -31,7 +31,7 @@ pub enum LexErrorKind {
 }
 
 impl Display for LexErrorKind {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         use LexErrorKind::*;
         match self {
             InvalidCharacter(c) => write!(f, "Invalid character: {}", c),
@@ -41,7 +41,7 @@ impl Display for LexErrorKind {
 }
 
 impl Display for LexError {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
