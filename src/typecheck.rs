@@ -17,7 +17,7 @@ type TKind = TypeKind;
 type TEKind = TypeExprKind;
 
 #[derive(Debug)]
-pub enum TypeErrorKind {
+pub enum ErrorKind {
     OperatorTypeMissmatch { expected: Type, found: Type },
     ProgramTypeUnknown,
     UndefinedVariable(Rc<str>),
@@ -26,18 +26,18 @@ pub enum TypeErrorKind {
 }
 
 #[derive(Debug)]
-pub struct TypeError {
-    pub kind: TypeErrorKind,
+pub struct Error {
+    pub kind: ErrorKind,
     pub span: Span,
 }
 
-pub fn typecheck(program: &mut Program) -> Result<(), Vec<TypeError>> {
+pub fn typecheck(program: &mut Program) -> Result<(), Vec<Error>> {
     Env::new().typecheck(program)
 }
 
-impl Display for TypeErrorKind {
+impl Display for ErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use TypeErrorKind::*;
+        use ErrorKind::*;
         match self {
             OperatorTypeMissmatch { expected, found } => {
                 write!(
@@ -64,22 +64,22 @@ impl Display for TypeErrorKind {
     }
 }
 
-impl Display for TypeError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl std::error::Error for TypeError {}
+impl std::error::Error for Error {}
 
-impl SourceError for TypeError {
+impl SourceError for Error {
     fn get_span(&self) -> Span {
         self.span
     }
 }
 
 struct Env {
-    errors: Vec<TypeError>,
+    errors: Vec<Error>,
     locals: HashMap<Rc<str>, Vec1<Local>>,
     type_locals: HashMap<Rc<str>, Type>,
 }
@@ -155,8 +155,8 @@ impl Env {
                 if let Some(ty) = self.type_locals.get(name) {
                     Ok(ty.clone())
                 } else {
-                    self.errors.push(TypeError {
-                        kind: TypeErrorKind::UndefinedVariable(name.clone()),
+                    self.errors.push(Error {
+                        kind: ErrorKind::UndefinedVariable(name.clone()),
                         span: expr.span,
                     });
                     Err(())
@@ -170,12 +170,12 @@ impl Env {
         }
     }
 
-    pub fn typecheck(mut self, program: &mut Program) -> Result<(), Vec<TypeError>> {
+    pub fn typecheck(mut self, program: &mut Program) -> Result<(), Vec<Error>> {
         let _ = self.visit(&mut program.body);
 
         if program.body.ty.is_none() {
-            self.errors.push(TypeError {
-                kind: TypeErrorKind::ProgramTypeUnknown,
+            self.errors.push(Error {
+                kind: ErrorKind::ProgramTypeUnknown,
                 span: program.body.span,
             });
         }
@@ -269,8 +269,8 @@ impl Env {
                     expr.ty = Some(local.last().ty.clone());
                     *unique_name = self.get_unique_name(name.clone());
                 } else {
-                    self.errors.push(TypeError {
-                        kind: TypeErrorKind::UndefinedVariable(name.clone()),
+                    self.errors.push(Error {
+                        kind: ErrorKind::UndefinedVariable(name.clone()),
                         span: expr.span,
                     })
                 }
@@ -293,8 +293,8 @@ impl Env {
             } => {
                 // Just until there is real type inference
                 if arg_type_expr.is_none() {
-                    self.errors.push(TypeError {
-                        kind: TypeErrorKind::UnknownType,
+                    self.errors.push(Error {
+                        kind: ErrorKind::UnknownType,
                         span: expr.span,
                     });
                     Err(())?;
@@ -327,8 +327,8 @@ impl Env {
                         expr.ty = Some(ret_type.as_ref().clone());
                     }
                     Some(_) => {
-                        self.errors.push(TypeError {
-                            kind: TypeErrorKind::NotAFunction(func.ty.clone().unwrap()),
+                        self.errors.push(Error {
+                            kind: ErrorKind::NotAFunction(func.ty.clone().unwrap()),
                             span: expr.span,
                         });
                         Err(())?;
@@ -350,8 +350,8 @@ impl Env {
         // expression's type could not be infered, we already know it
         match &expr.ty {
             Some(expr_ty) if expr_ty != &ty => {
-                self.errors.push(TypeError {
-                    kind: TypeErrorKind::OperatorTypeMissmatch {
+                self.errors.push(Error {
+                    kind: ErrorKind::OperatorTypeMissmatch {
                         expected: ty.clone(),
                         found: expr_ty.clone(),
                     },

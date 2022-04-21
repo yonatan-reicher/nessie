@@ -5,8 +5,6 @@ use crate::value::{NessieFn, Value};
 use std::collections::HashMap;
 use std::mem;
 
-pub enum CompileErrorKind {}
-
 pub fn compile(program: &Program) -> Chunk {
     Compiler::new().compile(program)
 }
