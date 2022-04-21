@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 type EKind = ExprKind;
 
+type TEKind = TypeExprKind;
+
 pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<ParseError>> {
     let mut parser = Parser::new(tokens);
 
@@ -26,6 +28,8 @@ pub enum ParseErrorKind {
     ExpectedIdentifier,
     ExpectedToken(TokenKind),
     EmptyCode,
+    ExpectedTypeExpr,
+    UnaryOperatorMissingOperand,
 }
 
 #[derive(Debug)]
@@ -45,6 +49,8 @@ impl Display for ParseErrorKind {
             ExpectedIdentifier => write!(f, "Expected identifier"),
             ExpectedToken(tk) => write!(f, "Expected a {}", tk),
             EmptyCode => write!(f, "The source code is empty"),
+            ExpectedTypeExpr => write!(f, "Expected type expression"),
+            UnaryOperatorMissingOperand => write!(f, "Unary operator missing operand"),
         }
     }
 }
@@ -82,16 +88,15 @@ fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Precedence {
     // Precedence from lowest to highest.
-    Or,             // or
-    Xor,            // xor
-    And,            // and
-    Equality,       // == !=
-    Comparison,     // < > <= >=
-    Term,           // + - ++
-    Factor,         // * / %
-    Application,    // x y
-    Unary,          // ! -
-    Call,           // . ()
+    Or,          // or
+    Xor,         // xor
+    And,         // and
+    Equality,    // == !=
+    Comparison,  // < > <= >=
+    Term,        // + - ++
+    Factor,      // * / %
+    Application, // x y, ! -
+    Call,        // . ()
     Atom,
 }
 
@@ -109,11 +114,19 @@ impl Precedence {
             Comparison => Term,
             Term => Factor,
             Factor => Application,
-            Application => Unary,
-            Unary => Call,
+            Application => Call,
             Call => Atom,
             Atom => Atom,
         }
+    }
+}
+
+fn get_unary_operator(token: &Token) -> Option<UnaryOp> {
+    type U = UnaryOp;
+    match &token.kind {
+        TKind::Minus => Some(U::Neg),
+        TKind::Not => Some(U::Not),
+        _ => None,
     }
 }
 
@@ -146,15 +159,6 @@ impl<'a> Parser<'a> {
             tokens,
             index: 0,
             errors: Vec::new(),
-        }
-    }
-
-    fn skip_until_kind(&mut self, kind: &TokenKind) {
-        while let Some(token) = self.tokens.get(self.index) {
-            if token.kind == *kind {
-                break;
-            }
-            self.index += 1;
         }
     }
 
@@ -198,6 +202,20 @@ impl<'a> Parser<'a> {
         self.make_expr_at(start_index, self.index, kind)
     }
 
+    fn make_type_expr_at(
+        &self,
+        start_index: usize,
+        end_index: usize,
+        kind: TypeExprKind,
+    ) -> TypeExpr {
+        let span = self.span_from_token_indices(start_index, end_index - 1);
+        TypeExpr { span, kind }
+    }
+
+    fn make_type_expr(&self, start_index: usize, kind: TypeExprKind) -> TypeExpr {
+        self.make_type_expr_at(start_index, self.index, kind)
+    }
+
     fn parse_atom(&mut self) -> Result<Option<Expr>, ()> {
         let start = self.index;
         match try_kind(self.tokens.get(self.index)) {
@@ -235,21 +253,6 @@ impl<'a> Parser<'a> {
                     Some(self.make_expr(start, kind))
                 })
             }
-            Some(&TokenKind::Minus) => {
-                self.index += 1;
-                let expr = self.parse_atom();
-                match expr {
-                    Ok(Some(expr)) => {
-                        let kind = ExprKind::Unary(UnaryOp::Neg, Box::new(expr));
-                        Ok(Some(self.make_expr(start, kind)))
-                    }
-                    Ok(None) => {
-                        self.report_error(ParseErrorKind::ExpectedExpressionAtom, start);
-                        Err(())
-                    }
-                    Err(()) => Err(()),
-                }
-            }
             _ => Ok(None),
         }
     }
@@ -276,20 +279,42 @@ impl<'a> Parser<'a> {
             }
         }
         // Reduce to an expression
-        Ok(atoms.ok_or(())?.into_iter().reduce(
-            |(left, left_index), (right, right_index)| {
+        Ok(atoms
+            .ok_or(())?
+            .into_iter()
+            .reduce(|(left, _), (right, right_index)| {
                 let kind = EKind::App {
                     func: Box::new(left),
                     arg: Box::new(right),
                 };
                 (self.make_expr_at(start, right_index, kind), right_index)
-            },
-        ).map(|(expr, _)| expr))
+            })
+            .map(|(expr, _)| expr))
+    }
+
+    fn unary_expr(&mut self) -> Result<Option<Expr>, ()> {
+        let start = self.index;
+        if let Some(op) = self.tokens.get(self.index).and_then(get_unary_operator) {
+            self.index += 1;
+            self.parse_atom().and_then(|atom| {
+                if let Some(atom) = atom {
+                    let kind = EKind::Unary(op, Box::new(atom));
+                    Ok(Some(self.make_expr(start, kind)))
+                } else {
+                    self.report_error(ParseErrorKind::UnaryOperatorMissingOperand, start);
+                    Err(())
+                }
+            })
+        } else {
+            Ok(None)
+        }
     }
 
     fn parse_precedence(&mut self, lowest_precedence: Precedence) -> Result<Expr, ()> {
         if let Precedence::Application = lowest_precedence {
-            return if let Some(expr) = self.application_exprs()? {
+            return if let Some(expr) = self.unary_expr()? {
+                Ok(expr)
+            } else if let Some(expr) = self.application_exprs()? {
                 Ok(expr)
             } else {
                 self.report_error_here(ParseErrorKind::ExpectedExpressionAtom);
@@ -380,17 +405,54 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn func_expr(&mut self) -> Result<Option<Expr>, ()> {
+    fn type_expr_atom(&mut self) -> Result<TypeExpr, ()> {
+        let start = self.index;
+        let identifier = self.identifier();
+        Ok(self.make_type_expr(start, TypeExprKind::Var(identifier?)))
+    }
+
+    fn function_type_expr(&mut self) -> Result<TypeExpr, ()> {
+        let start = self.index;
+        let atom = self.type_expr_atom();
+        match try_kind(self.tokens.get(self.index)) {
+            Some(TokenKind::Arrow) => {
+                self.index += 1;
+                let type_expr = self.type_expr();
+                let kind = TEKind::Function(Box::new(atom?), Box::new(type_expr?));
+                Ok(self.make_type_expr(start, kind))
+            }
+            _ => Ok(atom?),
+        }
+    }
+
+    fn type_expr(&mut self) -> Result<TypeExpr, ()> {
+        let start = self.index;
+        let res = self.function_type_expr();
+        if res.is_err() {
+            self.report_error(ParseErrorKind::ExpectedTypeExpr, start);
+            return Err(());
+        }
+        res
+    }
+
+    fn function_expr(&mut self) -> Result<Option<Expr>, ()> {
         let start = self.index;
         let errors = self.errors.len();
         let arg_name = self.identifier();
-        if self.token_kind_eq(TKind::Arrow).is_ok() {
+        let arg_type_expr = {
+            if try_kind(self.tokens.get(self.index)) == Some(&TKind::Colon) {
+                self.index += 1;
+                self.type_expr().map(Some)
+            } else {
+                Ok(None)
+            }
+        };
+        if self.token_kind_eq(TKind::FatArrow).is_ok() {
             let body = self.expr();
             Ok(Some(self.make_expr(
                 start,
                 ExprKind::Function {
-                    arg_name: arg_name?,
-                    unique_arg_name: None,
+                    arg: NameDeclaration::new(arg_name?, arg_type_expr?),
                     body: Box::new(body?),
                 },
             )))
@@ -407,13 +469,13 @@ impl<'a> Parser<'a> {
         let res = match try_kind(self.tokens.get(self.index)) {
             Some(TKind::Let) => self.let_expr(),
             Some(TKind::If) => self.if_expr(),
-            _ => {
-                if let Ok(Some(func)) = self.func_expr() {
-                    Ok(func)
+            _ => self.function_expr().and_then(|function_expr| {
+                if let Some(function_expr) = function_expr {
+                    Ok(function_expr)
                 } else {
                     self.parse_precedence(Precedence::LOWEST)
                 }
-            }
+            }),
         };
         if res.is_err() {
             self.report_error(ParseErrorKind::ExpectedExpression, start);

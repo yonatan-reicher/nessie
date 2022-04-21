@@ -121,8 +121,6 @@ make_token_kind! {
     Or or,
     Xor xor,
     Not not,
-    Int int,
-    Bool bool,
     True true,
     False false,
     ----------------
@@ -146,6 +144,7 @@ make_token_kind! {
     Ampersand '&',
     ----------------
     Arrow "->",
+    FatArrow "=>",
     Minus "-",
     PlusPlus "++",
     Plus "+",

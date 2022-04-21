@@ -4,6 +4,7 @@ pub use self::manual_rc::ManualRc;
 
 use crate::r#type::*;
 use crate::chunk::Chunk;
+use std::fmt::{self, Debug, Display, Formatter};
 
 
 #[derive(Clone, Copy)]
@@ -15,7 +16,7 @@ pub union Value {
     pub ptr: ManualRc<()>,
 }
 
-impl std::fmt::Debug for Value {
+impl Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         unsafe {
             // print the value's binary representation
@@ -43,9 +44,9 @@ impl Value {
     /// Initializes a new function value.
     /// # Safety
     /// This function is copied to the heap, and must be manually memory managed.
-    pub unsafe fn new_function(function: Function) -> Self {
+    pub unsafe fn new_function(function: NessieFn) -> Self {
         // TODO: Move the function instead of cloning it
-        let function = ManualRc::new(&function);
+        let function: ManualRc<Function> = ManualRc::new(&Function::Nessie(function));
         Value { function }
     }
 
@@ -75,16 +76,34 @@ impl Value {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum Function {
+    Nessie(NessieFn),
+    Native(NativeFn),
+}
+
 #[derive(Clone, Debug, Default)]
-pub struct Function {
+pub struct NessieFn {
     pub chunk: Chunk,
     pub name: Option<String>,
 }
 
-impl Function {
+impl NessieFn {
     /// Creates a new empty function.
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeFn {
+    pub name: String,
+    pub function: fn(Value) -> Value,
+}
+
+impl Debug for NativeFn {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "NativeFn {{ name: {} }}", self.name)
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::chunk::{Chunk, Instruction};
 use crate::r#type::{Type, TypeKind};
-use crate::value::{Function, Value};
+use crate::value::{NessieFn, Value};
 use std::collections::HashMap;
 use std::mem;
 
@@ -65,7 +65,7 @@ struct Compiler {
 #[derive(Debug)]
 enum CompileTo {
     Chunk(Chunk),
-    Function(Function),
+    Function(NessieFn),
 }
 
 type FrameOffset = usize;
@@ -205,13 +205,16 @@ impl Compiler {
                 self.backpatch(then_jmp_offset, I::Jump(else_len as u16));
             }
             EKind::Function {
-                arg_name: _,
-                unique_arg_name,
+                arg: NameDeclaration {
+                    unique_name: unique_arg_name,
+                    ty: arg_type,
+                    ..
+                },
                 body,
             } => {
                 // Create the function
                 // TODO: add a closure
-                let function = Function::new();
+                let function = NessieFn::new();
                 let mut local_variables = HashMap::new();
                 local_variables.insert(unique_arg_name.clone().unwrap(), 0);
                 // Point the compiler to this function and then switch back here
@@ -220,7 +223,8 @@ impl Compiler {
                 let old_stack_offset = mem::replace(&mut self.frame_offset, 0);
                 // Emit the body at the function's chunk
                 self.emit_expr(&body);
-                self.emit_stack_drop_above(&Type::INT, body.span.line); // TODO: change this
+                self.emit_stack_drop_above(arg_type.as_ref().unwrap(), body.span.line);
+
                 // Switch back
                 let function = mem::replace(&mut self.compile_to, old_compile_to);
                 let function = match function {

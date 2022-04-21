@@ -10,10 +10,11 @@ use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 use vec1::*;
 
-
 type EKind = ExprKind;
 
 type TKind = TypeKind;
+
+type TEKind = TypeExprKind;
 
 #[derive(Debug)]
 pub enum TypeErrorKind {
@@ -21,6 +22,7 @@ pub enum TypeErrorKind {
     ProgramTypeUnknown,
     UndefinedVariable(Rc<str>),
     NotAFunction(Type),
+    UnknownType,
 }
 
 #[derive(Debug)]
@@ -51,8 +53,13 @@ impl Display for TypeErrorKind {
                 write!(f, "The variable '{name}' does not exist in this context")
             }
             NotAFunction(t) => {
-                write!(f, "The type '{}' is not a function and cannot be applied", t)
+                write!(
+                    f,
+                    "The type '{}' is not a function and cannot be applied",
+                    t
+                )
             }
+            UnknownType => write!(f, "The type of this expression is unknown"),
         }
     }
 }
@@ -74,6 +81,7 @@ impl SourceError for TypeError {
 struct Env {
     errors: Vec<TypeError>,
     locals: HashMap<Rc<str>, Vec1<Local>>,
+    type_locals: HashMap<Rc<str>, Type>,
 }
 
 #[derive(Debug)]
@@ -130,6 +138,35 @@ impl Env {
         Self {
             errors: Vec::new(),
             locals: HashMap::new(),
+            type_locals: [
+                (Rc::from("int"), Type::INT),
+                (Rc::from("bool"), Type::BOOL),
+                (Rc::from("string"), Type::STRING),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+        }
+    }
+
+    pub fn eval_type_expr(&mut self, expr: &TypeExpr) -> Result<Type, ()> {
+        match &expr.kind {
+            TEKind::Var(name) => {
+                if let Some(ty) = self.type_locals.get(name) {
+                    Ok(ty.clone())
+                } else {
+                    self.errors.push(TypeError {
+                        kind: TypeErrorKind::UndefinedVariable(name.clone()),
+                        span: expr.span,
+                    });
+                    Err(())
+                }
+            }
+            TEKind::Function(left, right) => {
+                let left = self.eval_type_expr(left);
+                let right = self.eval_type_expr(right);
+                Ok(Type::function(Rc::new(left?), Rc::new(right?)))
+            }
         }
     }
 
@@ -245,22 +282,37 @@ impl Env {
                 expr.ty = then.ty.clone();
             }
             EKind::Function {
-                arg_name,
-                unique_arg_name,
+                arg:
+                    NameDeclaration {
+                        name: arg_name,
+                        unique_name: arg_unique_name,
+                        type_expr: arg_type_expr,
+                        ty: arg_type,
+                    },
                 body,
             } => {
-                // TODO: add an argument type field instead of hardcoding it
-                let arg_ty = Rc::new(Type::INT.clone());
-                *unique_arg_name = Some(self.declare_local(
+                // Just until there is real type inference
+                if arg_type_expr.is_none() {
+                    self.errors.push(TypeError {
+                        kind: TypeErrorKind::UnknownType,
+                        span: expr.span,
+                    });
+                    Err(())?;
+                }
+                let _ = arg_type.insert(
+                    self.eval_type_expr(arg_type_expr.as_ref().unwrap())?
+                        .clone(),
+                );
+                *arg_unique_name = Some(self.declare_local(
                     arg_name,
                     Local {
-                        ty: Type::INT.clone(),
+                        ty: arg_type.clone().unwrap(),
                     },
                 ));
                 self.visit(body)?;
                 self.undeclare_local(arg_name);
                 expr.ty = Some(Type::function(
-                    arg_ty,
+                    Rc::new(arg_type.clone().unwrap()),
                     Rc::new(body.ty.clone().unwrap()),
                 ));
             }
