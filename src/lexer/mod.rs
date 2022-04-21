@@ -8,6 +8,15 @@ use string_intern::StringInterner;
 use std::fmt::{self, Display, Formatter};
 
 
+pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
+    let mut lexer = Lexer::new(source);
+    let mut tokens = Vec::new();
+    while let Some(token) = lexer.lex_token()? {
+        tokens.push(token);
+    }
+    Ok(tokens)
+}
+
 pub struct Lexer<'source> {
     source: &'source str,
     /// The current position of the lexer in the source code.
@@ -19,20 +28,20 @@ pub struct Lexer<'source> {
 }
 
 #[derive(Debug)]
-pub struct LexError {
-    pub kind: LexErrorKind,
+pub struct Error {
+    pub kind: ErrorKind,
     pub span: Span,
 }
 
 #[derive(Debug)]
-pub enum LexErrorKind {
+pub enum ErrorKind {
     InvalidCharacter(char),
     UnterminatedString,
 }
 
-impl Display for LexErrorKind {
+impl Display for ErrorKind {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        use LexErrorKind::*;
+        use ErrorKind::*;
         match self {
             InvalidCharacter(c) => write!(f, "Invalid character: {}", c),
             UnterminatedString => write!(f, "Unterminated string"),
@@ -40,15 +49,15 @@ impl Display for LexErrorKind {
     }
 }
 
-impl Display for LexError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl std::error::Error for LexError {}
+impl std::error::Error for Error {}
 
-impl SourceError for LexError {
+impl SourceError for Error {
     fn get_span(&self) -> Span {
         self.span
     }
@@ -64,15 +73,6 @@ fn is_ident_char(c: char) -> bool {
 }
 
 
-pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
-    let mut lexer = Lexer::new(source);
-    let mut tokens = Vec::new();
-    while let Some(token) = lexer.lex_token()? {
-        tokens.push(token);
-    }
-    Ok(tokens)
-}
-
 impl<'source> Lexer<'source> {
     pub fn new(source: &'source str) -> Lexer<'source> {
         Lexer {
@@ -83,9 +83,9 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn make_error(&self, start: Position, kind: LexErrorKind) -> LexError {
+    fn make_error(&self, start: Position, kind: ErrorKind) -> Error {
         let span = Span { start, end: self.position, line: self.line };
-        LexError { kind, span }
+        Error { kind, span }
     }
 
     fn make_token(&mut self, start: Position, kind: TokenKind) -> Token {
@@ -94,7 +94,7 @@ impl<'source> Lexer<'source> {
         Token { kind, span }
     }
 
-    pub fn lex_token(&mut self) -> Result<Option<Token>, LexError> {
+    pub fn lex_token(&mut self) -> Result<Option<Token>, Error> {
         self.skip_whitespace();
 
         let start = self.position;
@@ -122,7 +122,7 @@ impl<'source> Lexer<'source> {
                 Ok(Some(self.make_token(start, kind)))
             } else {
                 self.advance_char();
-                Err(self.make_error(start, LexErrorKind::InvalidCharacter(c)))
+                Err(self.make_error(start, ErrorKind::InvalidCharacter(c)))
             }
         } else {
             Ok(None)
@@ -139,13 +139,13 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn advance_string_literal(&mut self) -> Result<Option<&'source str>, LexError> {
+    fn advance_string_literal(&mut self) -> Result<Option<&'source str>, Error> {
         if let Some(quote @ ('"' | '\'')) = self.current_char() {
             self.advance_char();
             let start = self.position;
             // Advance until we find the closing quote.
             while self.advance_char().ok_or_else(|| {
-                self.make_error(start, LexErrorKind::UnterminatedString)
+                self.make_error(start, ErrorKind::UnterminatedString)
             })? != quote {}
             Ok(Some(&self.source[start..self.position-1]))
         } else {
@@ -153,7 +153,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn advance_int_literal(&mut self) -> Result<Option<i32>, LexError> {
+    fn advance_int_literal(&mut self) -> Result<Option<i32>, Error> {
         if let Some('0'..='9') = self.current_char() {
             let start = self.position;
             while let Some('0'..='9') = self.current_char() {
