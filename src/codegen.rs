@@ -259,9 +259,10 @@ impl Compiler {
         self.frame_offset = frame_offset + 1;
     }
 
-    pub fn compile(mut self, program: &Program) -> Chunk {
+    pub fn compile(&mut self, program: &Program) -> Chunk {
         self.emit_expr(&program.body);
-        match self.compile_to {
+        let chunk = std::mem::replace(&mut self.compile_to, CompileTo::default());
+        match chunk {
             CompileTo::Chunk(chunk) => chunk,
             _ => panic!("something went wrong during program compilation"),
         }

@@ -177,7 +177,7 @@ impl Env {
         }
     }
 
-    pub fn typecheck(mut self, program: &mut Program) -> Result<(), Vec<Error>> {
+    pub fn typecheck(&mut self, program: &mut Program) -> Result<(), Vec<Error>> {
         let _ = self.visit(&mut program.body);
 
         if program.body.ty.is_none() {
@@ -190,7 +190,8 @@ impl Env {
         if self.errors.is_empty() {
             Ok(())
         } else {
-            Err(self.errors)
+            let errors = std::mem::replace(&mut self.errors, vec![]);
+            Err(errors)
         }
     }
 
