@@ -51,6 +51,11 @@ impl Value {
         Value { function }
     }
 
+    pub unsafe fn new_native_function(function: NativeFn) -> Self {
+        let function: ManualRc<Function> = ManualRc::new(&Function::Native(function));
+        Value { function }
+    }
+
     /// Are two values equal?
     /// # Safety
     /// Behavior may be undefined if the values are not of the same type.
@@ -61,7 +66,7 @@ impl Value {
     /// Free all resources owned by this value.
     /// # Safety
     /// The type provided must fit the value.
-    pub unsafe fn free(&mut self, ty: Type) {
+    pub unsafe fn free(mut self, ty: Type) {
         match ty.kind {
             TypeKind::Int => {}
             TypeKind::Bool => {}
@@ -109,7 +114,7 @@ impl Debug for NativeFn {
 }
 
 pub mod prelude {
-    pub use super::{ManualRc, Value};
+    pub use super::*;
 }
 
 #[cfg(test)]

@@ -75,15 +75,20 @@ pub struct Chunk {
     instructions: Vec<Instruction>,
     instruction_lines: Vec<Line>,
     constants: Vec<Value>,
+    name: Option<String>,
 }
 
 impl Chunk {
     pub fn new() -> Self {
-        Self {
-            instructions: Vec::new(),
-            instruction_lines: Vec::new(),
-            constants: Vec::new(),
-        }
+        Self::default()
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn name_mut(&mut self) -> Option<&mut String> {
+        self.name.as_mut()
     }
 
     /// Adds a new instruction to the chunk with the given line information.

@@ -1,15 +1,14 @@
 use crate::chunk::{Chunk, Instruction};
-use crate::disassemble::disassamble_instruction;
-use crate::value::{Value, NessieFn, NativeFn, Function};
+use crate::disassemble::{self, disassamble_instruction};
+use crate::value::{Function, NativeFn, NessieFn, Value};
 
 type I = Instruction;
 
 /// A virtual machine is a stack-based interpreter for a chunk of bytecode.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct VM {
     pub stack: Vec<Value>,
     pub frame_start: usize,
-    debug_stream: Option<Box<dyn std::io::Write>>,
 }
 
 impl VM {
@@ -17,18 +16,7 @@ impl VM {
         Self {
             stack: Vec::new(),
             frame_start: 0,
-            debug_stream: None,
         }
-    }
-
-    /// Sets the debug stream for the virtual machine.
-    pub fn set_debug_stream(&mut self, stream: Box<dyn std::io::Write>) {
-        self.debug_stream = Some(stream);
-    }
-
-    /// Clear the debug stream for the virtual machine.
-    pub fn clear_debug_stream(&mut self) {
-        self.debug_stream = None;
     }
 
     unsafe fn run_nessie_function(&mut self, function: &NessieFn) {
@@ -50,7 +38,19 @@ impl VM {
     }
 
     /// Executes the virtual machine.
+    pub fn eval(&mut self, chunk: &Chunk) -> Value {
+        self.run(chunk);
+        self.stack.pop().unwrap()
+    }
+
     pub fn run(&mut self, chunk: &Chunk) {
+        #[cfg(debug_assertions)]
+        {
+            let mut buf = Vec::new();
+            disassemble::chunk_header(&mut buf, chunk).unwrap();
+            print!("{}", String::from_utf8(buf).unwrap());
+        }
+
         let mut ip = 0;
         while ip < chunk.instructions().len() {
             let instruction = chunk.instructions()[ip];
@@ -104,23 +104,8 @@ impl VM {
             }};
         }
 
-        // print debug information
-        if let Some(ref mut debug_stream) = self.debug_stream {
-            let stack_string = {
-                let mut s = String::new();
-                // print the stack
-                s.push_str("[");
-                for (i, value) in self.stack.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
-                    }
-                    s.push_str(&format!("{:?}", value));
-                }
-                s.push_str("]");
-                s
-            };
-            disassamble_instruction(debug_stream, chunk, *ip, &stack_string).unwrap();
-        }
+        #[cfg(debug_assertions)]
+        let old_ip = *ip;
 
         // execute the instruction
         match instruction {
@@ -208,43 +193,54 @@ impl VM {
             }
         }
         *ip += 1;
+
+        #[cfg(debug_assertions)]
+        {
+            let mut buf = Vec::new();
+            disassamble_instruction(&mut buf, chunk, old_ip, &format!("{:?}", &self.stack))
+                .unwrap();
+            print!("{}", String::from_utf8(buf).unwrap());
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indoc::indoc;
     use crate::source_error::SourceError;
+    use indoc::indoc;
 
     /// This should be used instead of writing to stdout directly,
     /// because while println! are captured by the test runner,
     /// stdout is not.
-    fn disassamble(chunk: &Chunk, name: &str) {
+    fn disassamble(chunk: &Chunk) {
         use crate::disassemble::disassamble;
 
         let mut stream = Vec::new();
-        disassamble(&mut stream, chunk, name).unwrap();
+        disassamble(&mut stream, chunk).unwrap();
         println!("{}", String::from_utf8(stream).unwrap());
     }
 
-
     fn prog(code: &str) -> Chunk {
-        let tokens = crate::lexer::lex(code).map_err(|e| {
-            println!("{}", e.with_source(code))
-        }).unwrap();
-        let mut program = crate::parser::parse(&tokens).map_err(|e| {
-            for e in e { 
-                println!("{}", e.with_source(code));
-            }
-            panic!();
-        }).unwrap();
-        crate::typecheck::typecheck(&mut program).map_err(|e| {
-            for e in e {
-                println!("{}", e.with_source(code));
-            }
-            panic!();
-        }).unwrap();
+        let tokens = crate::lexer::lex(code)
+            .map_err(|e| println!("{}", e.with_source(code)))
+            .unwrap();
+        let mut program = crate::parser::parse(&tokens)
+            .map_err(|e| {
+                for e in e {
+                    println!("{}", e.with_source(code));
+                }
+                panic!();
+            })
+            .unwrap();
+        crate::typecheck::typecheck(&mut program)
+            .map_err(|e| {
+                for e in e {
+                    println!("{}", e.with_source(code));
+                }
+                panic!();
+            })
+            .unwrap();
         let chunk = crate::codegen::compile(&program);
         println!("{:?}", chunk);
         chunk
@@ -257,9 +253,9 @@ mod tests {
         chunk.write(I::Constant(num_index), 0);
 
         let mut vm = VM::new();
-        vm.run(&chunk);
+        let val = vm.eval(&chunk);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 1) };
+        unsafe { assert_eq!(val.int, 1) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -267,6 +263,7 @@ mod tests {
     fn simple_arithmetic() {
         let mut chunk = Chunk::new();
         let num_1_index = chunk.write_constant(Value { int: 14 });
+        chunk.name_mut().map(|x| *x = "simple_arithmetic".into());
         let num_2_index = chunk.write_constant(Value { int: 5 });
         let num_3_index = chunk.write_constant(Value { int: 3 });
         let num_4_index = chunk.write_constant(Value { int: 9 });
@@ -278,12 +275,12 @@ mod tests {
         chunk.write(I::Constant(num_4_index), 114);
         chunk.write(I::Sub, 115);
 
-        disassamble(&chunk, "simple_arithmetic");
+        disassamble(&chunk);
 
         let mut vm = VM::new();
-        vm.run(&chunk);
+        let val = vm.eval(&chunk);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().int, -3) };
+        unsafe { assert_eq!(val.int, -3) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -297,12 +294,12 @@ mod tests {
             d - c
         "});
 
-        disassamble(&program, "let_program");
+        disassamble(&program);
 
         let mut vm = VM::new();
-        vm.run(&program);
+        let val = vm.eval(&program);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 3) };
+        unsafe { assert_eq!(val.int, 3) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -312,12 +309,12 @@ mod tests {
             2 + (let a = 1 in a * 3)
         "});
 
-        disassamble(&program, "add_with_let");
+        disassamble(&program);
 
         let mut vm = VM::new();
-        vm.run(&program);
+        let val = vm.eval(&program);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 5) };
+        unsafe { assert_eq!(val.int, 5) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -330,12 +327,12 @@ mod tests {
                 3
         "});
 
-        disassamble(&program, "if_true");
+        disassamble(&program);
 
         let mut vm = VM::new();
-        vm.run(&program);
+        let val = vm.eval(&program);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 2) };
+        unsafe { assert_eq!(val.int, 2) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -348,12 +345,12 @@ mod tests {
                 3
         "});
 
-        disassamble(&program, "if_false");
+        disassamble(&program);
 
         let mut vm = VM::new();
-        vm.run(&program);
+        let val = vm.eval(&program);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().int, 3) };
+        unsafe { assert_eq!(val.int, 3) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -364,12 +361,12 @@ mod tests {
             f == f
         "});
 
-        disassamble(&program, "function");
+        disassamble(&program);
 
         let mut vm = VM::new();
-        vm.run(&program);
+        let val = vm.eval(&program);
 
-        unsafe { assert_eq!(vm.stack.pop().unwrap().boolean, true) };
+        unsafe { assert_eq!(val.boolean, true) };
         assert_eq!(vm.stack.len(), 0);
     }
 }

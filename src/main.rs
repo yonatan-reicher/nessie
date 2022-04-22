@@ -4,6 +4,8 @@ use std::path::Path;
 use std::io::{self, Write, stdin, stdout};
 use std::fs::read_to_string;
 use nessie::Engine;
+use nessie::{Type, Value, NativeFn};
+use std::rc::Rc;
 //use nessie::vm::VM;
 //use nessie::lexer::{lex, Error as LexError};
 //use nessie::parser::{parse, Error as ParseError};
@@ -49,10 +51,25 @@ fn run_file(file_path: &Path) -> io::Result<()> {
     let source = read_to_string(file_path)?;
 
     let mut engine = Engine::new();
+ 
+    // Add some builtins
+    engine.declare(
+        "print".into(),
+        Type::function(Rc::new(Type::STRING), Rc::new(Type::STRING)),
+        unsafe { Value::new_native_function(NativeFn {
+            name: "print".into(),
+            function: |string_value: Value| {
+                let string = string_value.string.get();
+                println!("{}", string);
+                string_value
+            }
+        }) }
+    );
     match engine.typecheck(&source) {
         Ok(program) => {
             let value = engine.eval(&program);
             println!("{:?}", value);
+            unsafe { value.free(program.ty()) };
         }
         Err(err) => {
             println!("{}", err);
@@ -64,7 +81,20 @@ fn run_file(file_path: &Path) -> io::Result<()> {
 fn repl() -> io::Result<()> {
     let mut input_buf = String::new();
     let mut engine = Engine::new();
-    *engine.debug_stream() = Some(Box::new(stdout()));
+ 
+    // Add some builtins
+    engine.declare(
+        "print".into(),
+        Type::function(Rc::new(Type::STRING), Rc::new(Type::STRING)),
+        unsafe { Value::new_native_function(NativeFn {
+            name: "print".into(),
+            function: |string_value: Value| {
+                let string = string_value.string.get();
+                println!("{}", string);
+                string_value
+            }
+        }) }
+    );
 
     loop {
         print!("> ");
@@ -82,6 +112,7 @@ fn repl() -> io::Result<()> {
             Ok(program) => {
                 let value = engine.eval(&program);
                 println!("{:?}", value);
+                unsafe { value.free(program.ty()) };
             }
             Err(err) => {
                 println!("{}", err);
@@ -94,6 +125,20 @@ fn disassemble_file(file_path: &Path) -> io::Result<()> {
     let _name = file_path.file_name().unwrap().to_str().unwrap();
     let source = read_to_string(file_path)?;
     let mut engine = Engine::new();
+ 
+    // Add some builtins
+    engine.declare(
+        "print".into(),
+        Type::function(Rc::new(Type::STRING), Rc::new(Type::STRING)),
+        unsafe { Value::new_native_function(NativeFn {
+            name: "print".into(),
+            function: |string_value: Value| {
+                let string = string_value.string.get();
+                println!("{}", string);
+                string_value
+            }
+        }) }
+    );
     match engine.typecheck(&source) {
         Ok(program) => {
             engine.disassamble(&program, stdout())?;

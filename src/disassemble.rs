@@ -2,15 +2,23 @@ use std::io::{self, Write};
 use crate::chunk::Chunk;
 
 
-pub fn disassamble<W>(mut out: W, chunk: &Chunk, name: &str) -> io::Result<()>
+pub fn disassamble<W>(mut out: W, chunk: &Chunk) -> io::Result<()>
 where W: Write {
-    writeln!(out, "== {} ==", name)?;
+    chunk_header(&mut out, chunk)?;
     
     let mut offset = 0;
     while offset < chunk.instructions().len() {
         disassamble_instruction(&mut out, chunk, offset, "")?;
         offset += 1;
     }
+    Ok(())
+}
+
+pub fn chunk_header<W>(mut out: W, chunk: &Chunk) -> io::Result<()>
+where W: Write
+{
+    writeln!(out, "== {} ==", chunk.name().unwrap_or("<unknown>"))?;
+    writeln!(out, "constants: {}, instructions: {}", chunk.constants().len(), chunk.instructions().len())?;
     Ok(())
 }
 
@@ -51,14 +59,15 @@ mod tests {
         chunk.write(Instruction::Constant(0), 123);
 
         let mut out = Vec::new();
-        disassamble(&mut out, &chunk, "test").expect("disassamble failed");
+        disassamble(&mut out, &chunk).expect("disassamble failed");
         let out = String::from_utf8(out).expect("output is not utf8");
         let out = trim_line_ends(&out);
 
         assert_eq!(
             out,
             indoc!("
-                == test ==
+                == <unknown> ==
+                constants: 0, instructions: 2
                 0000  124 Return
                 0001    | Constant(0)
             ")

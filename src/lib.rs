@@ -80,7 +80,7 @@ impl std::error::Error for Error {}
 
 pub type Result<T> = result::Result<T, Error>;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Engine {
     /// The typechecking context.
     env: typecheck::Env,
@@ -88,13 +88,27 @@ pub struct Engine {
     compiler: codegen::Compiler,
     /// The code execution context.
     vm: vm::VM,
-    debug_stream: Option<Box<dyn Write>>,
 }
 
 /// A program that is well typed
 pub struct TypedProgram {
     ast: Program,
     chunk: Chunk,
+}
+
+impl TypedProgram {
+    pub fn ast(&self) -> &Program {
+        &self.ast
+    }
+
+    pub fn chunk(&self) -> &Chunk {
+        &self.chunk
+    }
+    
+    /// Returns the typed of the compiled program.
+    pub fn ty(&self) -> Type {
+        self.ast.body.ty.clone().unwrap()
+    }
 }
 
 fn as_error<T, E>(source: &str, kind_function: fn(E) -> ErrorKind, r: result::Result<T, E>) -> Result<T> {
@@ -107,10 +121,6 @@ fn as_error<T, E>(source: &str, kind_function: fn(E) -> ErrorKind, r: result::Re
 impl Engine {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn debug_stream(&mut self) -> &mut Option<Box<dyn Write>> {
-        &mut self.debug_stream
     }
 
     pub fn declare(&mut self, name: Rc<str>, ty_: Type, value: Value) {
@@ -131,13 +141,12 @@ impl Engine {
     }
 
     pub fn disassamble<W: Write>(&self, program: &TypedProgram, write: W) -> io::Result<()> {
-        disassemble::disassamble(write, &program.chunk, "chunk")?;
+        disassemble::disassamble(write, &program.chunk)?;
         Ok(())
     }
 
     pub fn eval(&mut self, program: &TypedProgram) -> Value {
-        self.vm.run(&program.chunk);
-        self.vm.stack.pop().unwrap()
+        self.vm.eval(&program.chunk)
     }
 }
 

@@ -261,6 +261,7 @@ impl Compiler {
 
     pub fn compile(&mut self, program: &Program) -> Chunk {
         self.emit_expr(&program.body);
+        self.frame_offset -= 1;
         let chunk = std::mem::replace(&mut self.compile_to, CompileTo::default());
         match chunk {
             CompileTo::Chunk(chunk) => chunk,

@@ -66,7 +66,9 @@ where
 {
     /// Creates a new `ManualRc` containing the given value.
     pub unsafe fn new(value: &T) -> Self {
-        println!("Newing a value");
+        #[cfg(debug_assertions)]
+        println!("Allocating");
+
         let header = value.header();
         let layout = {
             Layout::new::<ManualRcBoxHead<T>>()
@@ -133,7 +135,10 @@ where
         *self.ref_count_mut() -= 1;
         if self.ref_count() == 0 {
             // Drop the value and free the memory
-            println!("Dropping value");
+            
+            #[cfg(debug_assertions)]
+            println!("Deallocating");
+
             ptr::drop_in_place(self.get_mut());
             dealloc(self.ptr.as_ptr(), T::layout(self.header()));
         }
