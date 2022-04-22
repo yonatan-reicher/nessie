@@ -23,9 +23,9 @@ mod source_error;
 
 use source_error::SourceError;
 use std::result;
-use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
+use std::io::{self, Write};
 
 
 // Bring in the data types:
@@ -78,7 +78,7 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-pub type Result<T> = result::Result<T, Box<dyn source_error::SourceError>>;
+pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Default)]
 pub struct Engine {
@@ -88,14 +88,29 @@ pub struct Engine {
     compiler: codegen::Compiler,
     /// The code execution context.
     vm: vm::VM,
+    debug_stream: Option<Box<dyn Write>>,
 }
 
 /// A program that is well typed
-pub struct TypedProgram(Program);
+pub struct TypedProgram {
+    ast: Program,
+    chunk: Chunk,
+}
+
+fn as_error<T, E>(source: &str, kind_function: fn(E) -> ErrorKind, r: result::Result<T, E>) -> Result<T> {
+    r.map_err(|e| Error {
+        kind: kind_function(e),
+        source: source.into(),
+    })
+}
 
 impl Engine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn debug_stream(&mut self) -> &mut Option<Box<dyn Write>> {
+        &mut self.debug_stream
     }
 
     pub fn declare(&mut self, name: Rc<str>, ty_: Type, value: Value) {
@@ -104,15 +119,25 @@ impl Engine {
         self.vm.stack.push(value);
     }
 
-    //pub fn typecheck(&mut self, mut program: Program) -> Result<TypedProgram> {
-    //    self.env.typecheck(&mut program).map_err(Error::Kind)?;
-    //}
-    //
-    //pub fn eval(&mut self, source_code: &str) -> Result<Value> {
-    //    let tokens = lexer::lex(source_code)?;
-    //    let ast = parser::parse(&tokens)?;
-    //
-    //    Ok()
-    //}
+    pub fn typecheck(&mut self, source_code: &str) -> Result<TypedProgram> {
+        let tokens = as_error(source_code, ErrorKind::Lex, lexer::lex(source_code))?;
+        let mut ast = as_error(source_code, ErrorKind::Parse, parser::parse(&tokens))?;
+        as_error(source_code, ErrorKind::Typecheck, self.env.typecheck(&mut ast))?;
+        let chunk = self.compiler.compile(&ast);
+        Ok(TypedProgram {
+            ast,
+            chunk,
+        })
+    }
+
+    pub fn disassamble<W: Write>(&self, program: &TypedProgram, write: W) -> io::Result<()> {
+        disassemble::disassamble(write, &program.chunk, "chunk")?;
+        Ok(())
+    }
+
+    pub fn eval(&mut self, program: &TypedProgram) -> Value {
+        self.vm.run(&program.chunk);
+        self.vm.stack.pop().unwrap()
+    }
 }
 
