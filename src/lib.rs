@@ -141,7 +141,7 @@ impl Engine {
     }
 
     pub fn disassamble<W: Write>(&self, program: &TypedProgram, write: W) -> io::Result<()> {
-        disassemble::disassamble(write, &program.chunk)?;
+        disassemble::disassemble(write, &program.chunk)?;
         Ok(())
     }
 

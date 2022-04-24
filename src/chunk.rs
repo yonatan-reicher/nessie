@@ -60,6 +60,13 @@ pub enum Instruction {
     JumpIfFalse(u16),
     /// Pops a value and function off the stack and calls it with the value.
     Call,
+    /// Takes a closure with an empty capture list and a variable number of
+    /// arguments off the stack and puts them into the closure's capture list.
+    /// 
+    /// The closure is the value at the top of the stack.
+    /// The value farthest from the top of the stack is the first on the
+    /// capture list.
+    Closure(u16),
 }
 
 impl Display for Instruction {

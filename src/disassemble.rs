@@ -2,13 +2,13 @@ use std::io::{self, Write};
 use crate::chunk::Chunk;
 
 
-pub fn disassamble<W>(mut out: W, chunk: &Chunk) -> io::Result<()>
+pub fn disassemble<W>(mut out: W, chunk: &Chunk) -> io::Result<()>
 where W: Write {
     chunk_header(&mut out, chunk)?;
     
     let mut offset = 0;
     while offset < chunk.instructions().len() {
-        disassamble_instruction(&mut out, chunk, offset, "")?;
+        disassemble_instruction(&mut out, chunk, offset, "")?;
         offset += 1;
     }
     Ok(())
@@ -22,7 +22,7 @@ where W: Write
     Ok(())
 }
 
-pub fn disassamble_instruction<W>(mut out: W, chunk: &Chunk, offset: usize, more: &str)
+pub fn disassemble_instruction<W>(mut out: W, chunk: &Chunk, offset: usize, more: &str)
 -> io::Result<()> where W: Write {
     let line_string = {
         let lines = chunk.instruction_lines();
@@ -59,7 +59,7 @@ mod tests {
         chunk.write(Instruction::Constant(0), 123);
 
         let mut out = Vec::new();
-        disassamble(&mut out, &chunk).expect("disassamble failed");
+        disassemble(&mut out, &chunk).expect("disassamble failed");
         let out = String::from_utf8(out).expect("output is not utf8");
         let out = trim_line_ends(&out);
 

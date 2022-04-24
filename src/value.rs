@@ -5,6 +5,7 @@ pub use self::manual_rc::ManualRc;
 use crate::chunk::Chunk;
 use crate::r#type::*;
 use std::fmt::{self, Debug, Formatter};
+use std::rc::Rc;
 
 #[derive(Clone, Copy)]
 pub union Value {
@@ -56,6 +57,11 @@ impl Value {
         Value { function }
     }
 
+    pub unsafe fn new_closure(closure: Closure) -> Self {
+        let function: ManualRc<Function> = ManualRc::new(&Function::Closure(closure));
+        Value { function }
+    }
+
     /// Are two values equal?
     /// # Safety
     /// Behavior may be undefined if the values are not of the same type.
@@ -86,12 +92,12 @@ impl Value {
 pub enum Function {
     Nessie(NessieFn),
     Native(NativeFn),
+    Closure(Closure),
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct NessieFn {
     pub chunk: Chunk,
-    pub name: Option<String>,
 }
 
 impl NessieFn {
@@ -111,6 +117,12 @@ impl Debug for NativeFn {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "NativeFn {{ name: {} }}", self.name)
     }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Closure {
+    pub chunk: Rc<Chunk>,
+    pub captured: Vec<Value>,
 }
 
 pub mod prelude {

@@ -1,6 +1,6 @@
 use crate::chunk::{Chunk, Instruction};
-use crate::disassemble::{self, disassamble_instruction};
-use crate::value::{Function, NativeFn, NessieFn, Value};
+use crate::disassemble::{self, disassemble_instruction};
+use crate::value::{Closure, Function, NativeFn, NessieFn, Value};
 
 type I = Instruction;
 
@@ -30,10 +30,20 @@ impl VM {
         (function.function)(self.stack.last().unwrap().clone());
     }
 
+    unsafe fn run_closure(&mut self, closure: &Closure) {
+        let old_frame_start = self.frame_start;
+        self.frame_start = self.stack.len() - 1;
+        // push the closure's captured variables
+        self.stack.extend_from_slice(&closure.captured);
+        self.run(&closure.chunk);
+        self.frame_start = old_frame_start;
+    }
+
     unsafe fn run_function(&mut self, function: &Function) {
         match function {
             Function::Nessie(nessie_fn) => self.run_nessie_function(nessie_fn),
             Function::Native(native_fn) => self.run_native_function(native_fn),
+            Function::Closure(closure) => self.run_closure(closure),
         }
     }
 
@@ -191,13 +201,27 @@ impl VM {
                 unsafe { self.run_function(function.get()) };
                 unsafe { function.dec_ref() };
             }
+            I::Closure(captured_len) => {
+                let mut function = unsafe { self.stack.pop().unwrap().function };
+                let chunk = match unsafe { function.get() } {
+                    Function::Closure(closure) => closure.chunk.clone(),
+                    _ => panic!("Expected closure"),
+                };
+                let captured = self.stack.drain(self.stack.len() - captured_len as usize..).collect();
+                let new_closure = Closure {
+                    chunk,
+                    captured,
+                };
+                self.stack.push(unsafe { Value::new_closure(new_closure) });
+                unsafe { function.dec_ref() };
+            }
         }
         *ip += 1;
 
         #[cfg(debug_assertions)]
         {
             let mut buf = Vec::new();
-            disassamble_instruction(&mut buf, chunk, old_ip, &format!("{:?}", &self.stack))
+            disassemble_instruction(&mut buf, chunk, old_ip, &format!("{:?}", &self.stack))
                 .unwrap();
             print!("{}", String::from_utf8(buf).unwrap());
         }
@@ -213,11 +237,11 @@ mod tests {
     /// This should be used instead of writing to stdout directly,
     /// because while println! are captured by the test runner,
     /// stdout is not.
-    fn disassamble(chunk: &Chunk) {
-        use crate::disassemble::disassamble;
+    fn disassemble(chunk: &Chunk) {
+        use crate::disassemble::disassemble;
 
         let mut stream = Vec::new();
-        disassamble(&mut stream, chunk).unwrap();
+        disassemble(&mut stream, chunk).unwrap();
         println!("{}", String::from_utf8(stream).unwrap());
     }
 
@@ -275,7 +299,7 @@ mod tests {
         chunk.write(I::Constant(num_4_index), 114);
         chunk.write(I::Sub, 115);
 
-        disassamble(&chunk);
+        disassemble(&chunk);
 
         let mut vm = VM::new();
         let val = vm.eval(&chunk);
@@ -294,7 +318,7 @@ mod tests {
             d - c
         "});
 
-        disassamble(&program);
+        disassemble(&program);
 
         let mut vm = VM::new();
         let val = vm.eval(&program);
@@ -309,7 +333,7 @@ mod tests {
             2 + (let a = 1 in a * 3)
         "});
 
-        disassamble(&program);
+        disassemble(&program);
 
         let mut vm = VM::new();
         let val = vm.eval(&program);
@@ -327,7 +351,7 @@ mod tests {
                 3
         "});
 
-        disassamble(&program);
+        disassemble(&program);
 
         let mut vm = VM::new();
         let val = vm.eval(&program);
@@ -345,7 +369,7 @@ mod tests {
                 3
         "});
 
-        disassamble(&program);
+        disassemble(&program);
 
         let mut vm = VM::new();
         let val = vm.eval(&program);
@@ -361,12 +385,32 @@ mod tests {
             f == f
         "});
 
-        disassamble(&program);
+        disassemble(&program);
 
         let mut vm = VM::new();
         let val = vm.eval(&program);
 
         unsafe { assert_eq!(val.boolean, true) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn function_with_let() {
+        let program = prog(indoc! {"
+            let f = (x: int =>
+                let a = x + 1 in
+                let b = a * 2 in
+                b + a
+            ) in
+            f(10)
+        "});
+
+        disassemble(&program);
+
+        let mut vm = VM::new();
+        let val = vm.eval(&program);
+
+        unsafe { assert_eq!(val.int, 33) };
         assert_eq!(vm.stack.len(), 0);
     }
 }
