@@ -99,6 +99,13 @@ impl VM {
             }};
         }
 
+        macro_rules! drop_above {
+            ($field: ident) => {{
+                let mut value = self.stack.remove(self.stack.len() - 2);
+                unsafe { value.$field.dec_ref() };
+            }}
+        }
+
         #[cfg(debug_assertions)]
         let old_ip = *ip;
 
@@ -146,30 +153,11 @@ impl VM {
             I::Concat => ptr_binary!(new_string, |x, y| &(x.to_string() + y), string.get()),
             // Variables.
             I::PrimitiveDropAbove => {
-                let top = self.stack.pop().unwrap();
-                // Take the primitive value out..
-                self.stack.pop();
-                // Push back the top of the stack.
-                self.stack.push(top);
+                self.stack.remove(self.stack.len() - 2);
             }
-            I::StringDropAbove => {
-                // Take the string out.
-                let mut string_value = self.stack.remove(self.stack.len() - 2);
-                // Decrease reference count.
-                unsafe { string_value.string.dec_ref() };
-            }
-            I::FunctionDropAbove => {
-                // Take the top value out.
-                let top = self.stack.pop().unwrap();
-
-                // Take the closure out.
-                let mut value = self.stack.pop().unwrap();
-                // Decrease reference count.
-                unsafe { value.function.dec_ref() };
-
-                // Place the top back.
-                self.stack.push(top);
-            }
+            I::StringDropAbove => drop_above!(string),
+            I::ClosureSourceDropAbove => drop_above!(closure_source),
+            I::FunctionDropAbove => drop_above!(function),
             I::PrimitiveGetLocal(offset) => {
                 let value = self.stack[self.frame_start + offset as usize].clone();
                 self.stack.push(value);
@@ -207,10 +195,6 @@ impl VM {
                 self.stack.push(unsafe { Value::new_closure(closure) });
 
                 unsafe { value.dec_ref() };
-            }
-            I::ClosureSourceDropAbove => {
-                let mut value = self.stack.remove(self.stack.len() - 2);
-                unsafe { value.closure_source.dec_ref() };
             }
         }
         *ip += 1;
