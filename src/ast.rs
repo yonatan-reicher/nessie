@@ -95,6 +95,7 @@ pub struct TypeExpr {
 pub enum TypeExprKind {
     Var(Rc<str>),
     Function(Box<TypeExpr>, Box<TypeExpr>),
+    Paren(Box<TypeExpr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

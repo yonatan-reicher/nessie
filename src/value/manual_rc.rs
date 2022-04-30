@@ -20,13 +20,11 @@ pub type RefCount = usize;
 pub trait ManualRcBoxable {
     type Header;
 
-    fn header(&self) -> Self::Header;
+    fn box_header(&self) -> Self::Header;
 
     fn layout(header: &Self::Header) -> Layout;
 
     unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<Self>>;
-
-    unsafe fn copy_to(&self, ptr: P<ManualRcBox<Self>>);
 }
 
 struct ManualRcBoxHead<T>
@@ -64,15 +62,15 @@ impl<T> ManualRc<T>
 where
     T: ?Sized + ManualRcBoxable,
 {
-    /// Creates a new `ManualRc` containing the given value.
-    pub unsafe fn new(value: &T) -> Self {
+    pub(super) unsafe fn new_uninit(header: T::Header) -> Self {
         #[cfg(debug_assertions)]
         println!("Allocating");
 
-        let header = value.header();
         let layout = {
             Layout::new::<ManualRcBoxHead<T>>()
-                .extend(T::layout(&header)).unwrap().0
+                .extend(T::layout(&header))
+                .unwrap()
+                .0
                 .pad_to_align()
         };
         let ptr = P::new(alloc(layout)).unwrap();
@@ -80,7 +78,6 @@ where
             let mut ptr = T::from_ptr(&header, ptr);
             ptr.as_mut().head.ref_count = 1;
             (&mut ptr.as_mut().head.header as *mut T::Header).write(header);
-            value.copy_to(ptr);
         }
         ManualRc {
             ptr,
@@ -135,7 +132,7 @@ where
         *self.ref_count_mut() -= 1;
         if self.ref_count() == 0 {
             // Drop the value and free the memory
-            
+
             #[cfg(debug_assertions)]
             println!("Deallocating");
 
@@ -145,13 +142,10 @@ where
     }
 }
 
-impl<T> ManualRcBoxable for T
-where
-    T: Clone,
-{
+impl<T> ManualRcBoxable for T {
     type Header = ();
 
-    fn header(&self) -> Self::Header {
+    fn box_header(&self) -> Self::Header {
         ()
     }
 
@@ -162,9 +156,16 @@ where
     unsafe fn from_ptr(_: &Self::Header, mem: P<u8>) -> P<ManualRcBox<T>> {
         mem.cast()
     }
+}
 
-    unsafe fn copy_to(&self, mut ptr: P<ManualRcBox<T>>) {
-        ptr::write(&mut ptr.as_mut().value, self.clone());
+impl<T> ManualRc<T>
+where
+    T: ManualRcBoxable,
+{
+    pub unsafe fn new(value: T) -> Self {
+        let mut rc = Self::new_uninit(value.box_header());
+        (rc.get_mut() as *mut T).write(value);
+        rc
     }
 }
 
@@ -174,12 +175,12 @@ where
 {
     type Header = usize;
 
-    fn header(&self) -> Self::Header {
+    fn box_header(&self) -> Self::Header {
         self.len()
     }
 
     fn layout(header: &Self::Header) -> Layout {
-         Layout::array::<T>(*header).unwrap()
+        Layout::array::<T>(*header).unwrap()
     }
 
     unsafe fn from_ptr(header: &Self::Header, mem: P<u8>) -> P<ManualRcBox<[T]>> {
@@ -187,20 +188,27 @@ where
         let ptr = ptr::slice_from_raw_parts(mem as *mut T, *header);
         P::new(ptr as _).unwrap()
     }
+}
 
-    unsafe fn copy_to(&self, mut ptr: P<ManualRcBox<[T]>>) {
+impl<T> ManualRc<[T]>
+where
+    T: Copy,
+{
+    pub unsafe fn from_slice(arr: &[T]) -> Self {
+        let mut rc = Self::new_uninit(arr.box_header());
         ptr::copy_nonoverlapping(
-            self.as_ptr(),
-            &mut ptr.as_mut().value as *mut [T] as *mut T,
-            self.len(),
+            arr.as_ptr(),
+            rc.get_mut().as_mut_ptr(),
+            arr.len(),
         );
+        rc
     }
 }
 
 impl ManualRcBoxable for str {
     type Header = usize;
 
-    fn header(&self) -> Self::Header {
+    fn box_header(&self) -> Self::Header {
         self.len()
     }
 
@@ -213,12 +221,16 @@ impl ManualRcBoxable for str {
         let ptr = ptr::slice_from_raw_parts(mem as *mut u8, *header);
         P::new(ptr as _).unwrap()
     }
+}
 
-    unsafe fn copy_to(&self, mut ptr: P<ManualRcBox<str>>) {
+impl ManualRc<str> {
+    pub unsafe fn from_str(s: &str) -> Self {
+        let mut rc = Self::new_uninit(s.box_header());
         ptr::copy_nonoverlapping(
-            self.as_ptr(),
-            &mut ptr.as_mut().value as *mut str as *mut u8,
-            self.len(),
+            s.as_ptr(),
+            rc.get_mut().as_mut_ptr(),
+            s.len(),
         );
+        rc
     }
 }

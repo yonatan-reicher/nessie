@@ -55,8 +55,8 @@ mod tests {
     #[test]
     fn test_disassamble() {
         let mut chunk = Chunk::new();
-        chunk.write(Instruction::Return, 123);
-        chunk.write(Instruction::Constant(0), 123);
+        chunk.write(Instruction::True, 123);
+        chunk.write(Instruction::PrimitiveConstant(0), 123);
 
         let mut out = Vec::new();
         disassemble(&mut out, &chunk).expect("disassamble failed");
@@ -68,8 +68,8 @@ mod tests {
             indoc!("
                 == <unknown> ==
                 constants: 0, instructions: 2
-                0000  124 Return
-                0001    | Constant(0)
+                0000  124 True
+                0001    | PrimitiveConstant(0)
             ")
         );
     }

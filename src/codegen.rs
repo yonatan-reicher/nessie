@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::chunk::{Chunk, Instruction};
-use crate::r#type::{Type, TypeKind};
+use crate::r#type::prelude::*;
 use crate::value::prelude::*;
 use std::collections::HashMap;
 use std::mem;
@@ -38,50 +38,35 @@ fn binary_op_instruction(op: BinaryOp, arg_type: &Type) -> Instruction {
         (B::Eq, TKind::Int) => I::IntEq,
         (B::Eq, TKind::Bool) => I::BoolEq,
         (B::Eq, TKind::String) => I::StringEq,
-        (B::Eq, TKind::Function { .. }) => I::PtrEq,
+        (B::Eq, TKind::Function { .. }) => todo!("dont allow this"),
         (B::Ne, TKind::Int) => I::IntNe,
         (B::Ne, TKind::Bool) => I::BoolNe,
         (B::Ne, TKind::String) => I::StringNe,
-        (B::Ne, TKind::Function { .. }) => I::PtrNe,
+        (B::Ne, TKind::Function { .. }) => todo!("dont allow this"),
         (B::Lt, _) => I::Lt,
         (B::Le, _) => I::Le,
         (B::Gt, _) => I::Gt,
         (B::Ge, _) => I::Ge,
         (B::Concat, _) => I::Concat,
+        (_, TKind::ClosureSource) => todo!("dont allow this"),
     }
-}
-
-#[derive(Debug, Clone)]
-enum CompileTo {
-    Chunk(Chunk),
-    Closure {
-        chunk: Chunk,
-        captured_variables: Vec<UniqueName>,
-    },
 }
 
 type FrameOffset = usize;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 struct Frame {
-    /// The current function being compiled. At the top level, this is just a
-    /// chunk.
-    compile_to: CompileTo,
+    /// The current chunk being compiled.
+    chunk: Chunk,
     /// The locations variables declared in the current stack frame.   
     locals: HashMap<UniqueName, FrameOffset>,
     /// The current offset of the top of the stack frame.
     offset: FrameOffset,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Compiler {
     frames: Vec1<Frame>,
-}
-
-impl Default for CompileTo {
-    fn default() -> Self {
-        CompileTo::Chunk(Chunk::new())
-    }
 }
 
 impl Compiler {
@@ -111,18 +96,12 @@ impl Compiler {
 
     /// The current chunk being compiled.
     fn chunk(&self) -> &Chunk {
-        match &self.frame().compile_to {
-            CompileTo::Chunk(chunk) => chunk,
-            CompileTo::Closure { chunk, .. } => chunk,
-        }
+        &self.frame().chunk
     }
 
     /// Mutable reference to the current chunk being compiled.
     fn chunk_mut(&mut self) -> &mut Chunk {
-        match &mut self.frame_mut().compile_to {
-            CompileTo::Chunk(chunk) => chunk,
-            CompileTo::Closure { chunk, .. } => chunk,
-        }
+        &mut self.frame_mut().chunk
     }
 
     fn chunk_offset(&self) -> usize {
@@ -142,20 +121,18 @@ impl Compiler {
     fn emit_stack_get(&mut self, ty: &Type, offset: usize, line: usize) {
         // TODO: respond if offset is bigger u16
         let offset = offset as u16;
-        let instruction = match &ty.kind {
-            TKind::Bool | TKind::Int => I::PrimitiveGetLocal(offset),
-            TKind::String | TKind::Function { .. } => I::PtrGetLocal(offset),
+        let instruction = match ty.category() {
+            Category::Primitive => I::PrimitiveGetLocal(offset),
+            Category::Pointer => I::PtrGetLocal(offset),
         };
         self.chunk_mut().write(instruction, line);
         self.frame_mut().offset += 1;
     }
 
     fn emit_stack_drop_above(&mut self, ty: &Type, line: usize) {
-        let instruction = match &ty.kind {
-            TKind::Bool | TKind::Int => I::PrimitiveDropAbove,
-            TKind::String | TKind::Function { .. } => I::PtrDropAbove,
-        };
-        self.chunk_mut().write(instruction, line);
+        for &inst in ty.drop_above() {
+            self.chunk_mut().write(inst, line);
+        }
         self.frame_mut().offset -= 1;
     }
 
@@ -206,9 +183,11 @@ impl Compiler {
         let frame_offset = self.frame().offset;
         match &expr.kind {
             &EKind::Int(int) => {
-                let constant = self.chunk_mut().write_constant(Value::new_int(int));
+                let constant = unsafe {
+                    self.chunk_mut().write_constant(Value::new_int(int), &Type::INT)
+                };
                 self.chunk_mut()
-                    .write(I::Constant(constant), expr.span.line);
+                    .write(I::PrimitiveConstant(constant), expr.span.line);
             }
             EKind::True => {
                 self.chunk_mut().write(I::True, expr.span.line);
@@ -216,10 +195,12 @@ impl Compiler {
             EKind::False => {
                 self.chunk_mut().write(I::False, expr.span.line);
             }
-            EKind::String(string) => unsafe {
-                let constant = self.chunk_mut().write_constant(Value::new_string(string));
+            EKind::String(string) => {
+                let constant = unsafe { 
+                    self.chunk_mut().write_constant(Value::new_string(string), &Type::STRING)
+                };
                 self.chunk_mut()
-                    .write(I::Constant(constant), expr.span.line);
+                    .write(I::PtrConstant(constant), expr.span.line);
             },
             EKind::Paren(e) => self.emit_expr(&e),
             EKind::Unary(op, e) => {
@@ -289,19 +270,25 @@ impl Compiler {
                 let captured_variables: Vec<_> =
                     self.free_unique_names(&expr).into_iter().collect();
 
+                // First compile the destructor
+                let mut drop_captured = Vec::new();
+                // When the destructor is called, there is some arbitrary value
+                // at the top of the stack and bellow it, at the base of the
+                // call frame, all the captured variables.
+                for (_, ty) in captured_variables.iter() {
+                    drop_captured.extend(ty.drop_above());
+                }
+                // Move it to a shared reference
+                let drop_captured: Rc<[_]> = Rc::from(drop_captured);
+
                 // Compile a new stack frame
                 self.frames.push({
-                    let mut frame = Frame {
-                        locals: HashMap::new(),
-                        offset: captured_variables.len() + 1,
-                        compile_to: CompileTo::Closure {
-                            chunk: Chunk::new(),
-                            captured_variables: captured_variables
-                                .iter()
-                                .map(|x| x.0.clone())
-                                .collect(),
-                        },
-                    };
+                    let mut frame = Frame::default();
+                    *frame.chunk.name_mut() = Some(format!("{} => ...", unique_arg_name.as_ref().unwrap().name));
+                    // make place for the argument and the captured variables
+                    frame.offset += captured_variables.len() + 1;
+                    // declare the parameter and the captured variables as
+                    // locals
                     frame.locals.insert(unique_arg_name.clone().unwrap(), 0);
                     for (i, (name, _)) in captured_variables.iter().enumerate() {
                         frame.locals.insert(name.clone(), i + 1);
@@ -312,24 +299,27 @@ impl Compiler {
                 // Emit the body at the function's chunk
                 self.emit_expr(&body);
                 // Drop the captured variables and the parameter
-                for (_, ty) in captured_variables.iter().rev() {
-                    self.emit_stack_drop_above(ty, expr.span.line);
+                for _ in captured_variables.iter().rev() {
+                    // self.emit_stack_drop_above(ty, expr.span.line);
+                    // hack: we want to clear the stack without dropping the
+                    // values (because they are owned by the closure and have
+                    // are weakly referenced on the stack). We use a primitive
+                    // drop for this.
+                    self.chunk_mut().write(I::PrimitiveDropAbove, expr.span.line);
                 }
                 self.emit_stack_drop_above(arg_type.as_ref().unwrap(), body.span.line);
 
-                // Return the function
-                let frame = self.frames.pop().unwrap();
-                let chunk = match frame.compile_to {
-                    CompileTo::Closure { chunk, .. } => chunk,
-                    _ => panic!("Expected closure"),
-                };
+                // Get the compiled chunk
+                let chunk = self.frames.pop().unwrap().chunk;
 
                 // Load the function as a constant
                 if captured_variables.is_empty() {
                     let value = unsafe { Value::new_function(NessieFn { chunk }) };
-                    let constant = self.chunk_mut().write_constant(value);
+                    let constant = unsafe {
+                        self.chunk_mut().write_constant(value, &expr.ty.as_ref().unwrap())
+                    };
                     self.chunk_mut()
-                        .write(I::Constant(constant), expr.span.line);
+                        .write(I::PtrConstant(constant), expr.span.line);
                 } else {
                     // first, load the captured variables in order
                     for (name, ty) in &captured_variables {
@@ -338,14 +328,16 @@ impl Compiler {
                     }
                     // then, load the function
                     let value = unsafe {
-                        Value::new_closure(Closure {
+                        Value::new_closure_source(ClosureSource {
                             chunk: Rc::new(chunk),
-                            captured: vec![],
+                            drop_captured,
                         })
                     };
-                    let constant = self.chunk_mut().write_constant(value);
+                    let constant = unsafe {
+                        self.chunk_mut().write_constant(value, &Type::CLOSURE_SOURCE)
+                    };
                     self.chunk_mut()
-                        .write(I::Constant(constant), expr.span.line);
+                        .write(I::PtrConstant(constant), expr.span.line);
                     // Finally, produce the closure
                     self.chunk_mut()
                         .write(I::Closure(captured_variables.len() as u16), expr.span.line);
@@ -366,11 +358,9 @@ impl Compiler {
     pub fn compile(&mut self, program: &Program) -> Chunk {
         self.emit_expr(&program.body);
         *self.offset_mut() -= 1;
-        let chunk = std::mem::replace(&mut self.frame_mut().compile_to, CompileTo::default());
-        match chunk {
-            CompileTo::Chunk(chunk) => chunk,
-            _ => panic!("something went wrong during program compilation"),
-        }
+        let frame = mem::replace(self.frames.first_mut(), Frame::default());
+        self.frame_mut().locals = frame.locals;
+        frame.chunk
     }
 
     pub fn declare(&mut self, unique_name: UniqueName, ty: Type) {

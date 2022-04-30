@@ -407,6 +407,12 @@ impl<'a> Parser<'a> {
 
     fn type_expr_atom(&mut self) -> Result<TypeExpr, ()> {
         let start = self.index;
+        if let Some(TKind::LeftParen) = try_kind(self.tokens.get(self.index)) {
+            self.index += 1;
+            let expr = self.type_expr();
+            self.token_kind_eq(TKind::RightParen)?;
+            return Ok(self.make_type_expr(start, TEKind::Paren(Box::new(expr?))));
+        }
         let identifier = self.identifier();
         Ok(self.make_type_expr(start, TypeExprKind::Var(identifier?)))
     }

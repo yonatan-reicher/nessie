@@ -33,7 +33,7 @@ impl VM {
     unsafe fn run_closure(&mut self, closure: &Closure) {
         let old_frame_start = self.frame_start;
         self.frame_start = self.stack.len() - 1;
-        // push the closure's captured variables
+        // Push the closure's captured variables.
         self.stack.extend_from_slice(&closure.captured);
         self.run(&closure.chunk);
         self.frame_start = old_frame_start;
@@ -51,21 +51,6 @@ impl VM {
     pub fn eval(&mut self, chunk: &Chunk) -> Value {
         self.run(chunk);
         self.stack.pop().unwrap()
-    }
-
-    pub fn run(&mut self, chunk: &Chunk) {
-        #[cfg(debug_assertions)]
-        {
-            let mut buf = Vec::new();
-            disassemble::chunk_header(&mut buf, chunk).unwrap();
-            print!("{}", String::from_utf8(buf).unwrap());
-        }
-
-        let mut ip = 0;
-        while ip < chunk.instructions().len() {
-            let instruction = chunk.instructions()[ip];
-            self.run_single(instruction, chunk, &mut ip);
-        }
     }
 
     /// Executes a single instruction.
@@ -117,10 +102,16 @@ impl VM {
         #[cfg(debug_assertions)]
         let old_ip = *ip;
 
-        // execute the instruction
+        // Execute the instruction.
         match instruction {
-            I::Constant(constant) => {
+            I::PrimitiveConstant(constant) => {
                 let value = chunk.constants()[constant as usize];
+                self.stack.push(value);
+            }
+            I::PtrConstant(constant) => {
+                let mut value = chunk.constants()[constant as usize];
+                // Increment the reference count.
+                unsafe { value.ptr.inc_ref() };
                 self.stack.push(value);
             }
             I::True => {
@@ -129,51 +120,54 @@ impl VM {
             I::False => {
                 self.stack.push(Value { boolean: false });
             }
-            I::Return => {
-                let value = self.stack.pop().unwrap();
-                println!("{:?}", value);
-            }
-            // int operations
+            // Int operations.
             I::Add => binary!(+, int, int),
             I::Sub => binary!(-, int, int),
             I::Mul => binary!(*, int, int),
             I::Div => binary!(/, int, int),
             I::Mod => binary!(%, int, int),
             I::Neg => unary!(-, int, int),
-            // bool operations
+            // Bool operations.
             I::And => binary!(&&, boolean, boolean),
             I::Or => binary!(||, boolean, boolean),
             I::Xor => binary!(^, boolean, boolean),
             I::Not => unary!(!, boolean, boolean),
-            // comparison operations
+            // Comparison operations.
             I::IntEq => binary!(==, int, boolean),
             I::IntNe => binary!(!=, int, boolean),
             I::BoolEq => binary!(==, boolean, boolean),
             I::BoolNe => binary!(!=, boolean, boolean),
             I::StringEq => ptr_binary!(new_boolean, ==, string.get()),
             I::StringNe => ptr_binary!(new_boolean, !=, string.get()),
-            I::PtrEq => ptr_binary!(new_boolean, ==, ptr.ptr()),
-            I::PtrNe => ptr_binary!(new_boolean, !=, ptr.ptr()),
             I::Lt => binary!(<, int, boolean),
             I::Le => binary!(<=, int, boolean),
             I::Gt => binary!(>, int, boolean),
             I::Ge => binary!(>=, int, boolean),
             I::Concat => ptr_binary!(new_string, |x, y| &(x.to_string() + y), string.get()),
-            // Variables
+            // Variables.
             I::PrimitiveDropAbove => {
                 let top = self.stack.pop().unwrap();
-                // take the primitive value out
+                // Take the primitive value out..
                 self.stack.pop();
-                // push back the top of the stack
+                // Push back the top of the stack.
                 self.stack.push(top);
             }
-            I::PtrDropAbove => {
-                let top = self.stack.pop().unwrap();
-                // take the string out
-                let mut string_value = self.stack.pop().unwrap();
-                // decrease reference count
+            I::StringDropAbove => {
+                // Take the string out.
+                let mut string_value = self.stack.remove(self.stack.len() - 2);
+                // Decrease reference count.
                 unsafe { string_value.string.dec_ref() };
-                // place the top back
+            }
+            I::FunctionDropAbove => {
+                // Take the top value out.
+                let top = self.stack.pop().unwrap();
+
+                // Take the closure out.
+                let mut value = self.stack.pop().unwrap();
+                // Decrease reference count.
+                unsafe { value.function.dec_ref() };
+
+                // Place the top back.
                 self.stack.push(top);
             }
             I::PrimitiveGetLocal(offset) => {
@@ -181,9 +175,9 @@ impl VM {
                 self.stack.push(value);
             }
             I::PtrGetLocal(offset) => {
-                let mut string_value = self.stack[self.frame_start + offset as usize].clone();
-                unsafe { string_value.string.inc_ref() };
-                self.stack.push(string_value);
+                let mut value = self.stack[self.frame_start + offset as usize].clone();
+                unsafe { value.ptr.inc_ref() };
+                self.stack.push(value);
             }
             I::Jump(offset) => {
                 *ip += offset as usize;
@@ -202,18 +196,21 @@ impl VM {
                 unsafe { function.dec_ref() };
             }
             I::Closure(captured_len) => {
-                let mut function = unsafe { self.stack.pop().unwrap().function };
-                let chunk = match unsafe { function.get() } {
-                    Function::Closure(closure) => closure.chunk.clone(),
-                    _ => panic!("Expected closure"),
-                };
-                let captured = self.stack.drain(self.stack.len() - captured_len as usize..).collect();
-                let new_closure = Closure {
-                    chunk,
-                    captured,
-                };
-                self.stack.push(unsafe { Value::new_closure(new_closure) });
-                unsafe { function.dec_ref() };
+                let mut value = unsafe { self.stack.pop().unwrap().closure_source };
+
+                let closure_source = unsafe { value.get().clone() };
+                let captured = self
+                    .stack
+                    .drain(self.stack.len() - captured_len as usize..)
+                    .collect();
+                let closure = Closure::new(closure_source, captured);
+                self.stack.push(unsafe { Value::new_closure(closure) });
+
+                unsafe { value.dec_ref() };
+            }
+            I::ClosureSourceDropAbove => {
+                let mut value = self.stack.remove(self.stack.len() - 2);
+                unsafe { value.closure_source.dec_ref() };
             }
         }
         *ip += 1;
@@ -226,11 +223,61 @@ impl VM {
             print!("{}", String::from_utf8(buf).unwrap());
         }
     }
+
+    fn run_instructions(&mut self, instructions: &[Instruction], chunk: &Chunk) {
+        #[cfg(debug_assertions)]
+        {
+            let mut buf = Vec::new();
+            disassemble::chunk_header(&mut buf, chunk).unwrap();
+            print!("{}", String::from_utf8(buf).unwrap());
+            dbg!(&instructions);
+            dbg!(&self.stack);
+        }
+
+        let mut ip = 0;
+        while ip < instructions.len() {
+            self.run_single(instructions[ip], chunk, &mut ip);
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            print!(
+                "== end of {} == \n",
+                chunk.name().unwrap_or("<unknown>")
+            );
+        }
+    }
+
+    pub fn run(&mut self, chunk: &Chunk) {
+        self.run_instructions(chunk.instructions(), chunk);
+    }
+
+    fn drop_values(values: &[Value], drop_instructions: &[Instruction], chunk: &Chunk) {
+        // Create a virtual machine to run the instructions.
+        // Currently, allocating a new VM is cheap.
+        let mut vm = VM::new();
+        // Push the constants along with some dummy top value.
+        vm.stack.extend(values.iter().rev());
+        vm.stack.push(Value::new_int(0));
+        // Run the drop instructions.
+        vm.run_instructions(drop_instructions, chunk);
+    }
+
+    pub(crate) fn drop_chunk(chunk: &Chunk) {
+        dbg!("Dropping chunk");
+        VM::drop_values(chunk.constants(), &chunk.constants_drop(), chunk);
+    }
+
+    pub(crate) fn drop_closure(closure: &Closure) {
+        dbg!("Dropping closure");
+        VM::drop_values(&closure.captured, &closure.drop_captured, &closure.chunk);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::r#type::Type;
     use crate::source_error::SourceError;
     use indoc::indoc;
 
@@ -266,15 +313,15 @@ mod tests {
             })
             .unwrap();
         let chunk = crate::codegen::compile(&program);
-        println!("{:?}", chunk);
+        dbg!(&chunk);
         chunk
     }
 
     #[test]
     fn test_push_constant() {
         let mut chunk = Chunk::new();
-        let num_index = chunk.write_constant(Value { int: 1 });
-        chunk.write(I::Constant(num_index), 0);
+        let num_index = unsafe { chunk.write_constant(Value { int: 1 }, &Type::INT) };
+        chunk.write(I::PrimitiveConstant(num_index), 0);
 
         let mut vm = VM::new();
         let val = vm.eval(&chunk);
@@ -286,18 +333,20 @@ mod tests {
     #[test]
     fn simple_arithmetic() {
         let mut chunk = Chunk::new();
-        let num_1_index = chunk.write_constant(Value { int: 14 });
-        chunk.name_mut().map(|x| *x = "simple_arithmetic".into());
-        let num_2_index = chunk.write_constant(Value { int: 5 });
-        let num_3_index = chunk.write_constant(Value { int: 3 });
-        let num_4_index = chunk.write_constant(Value { int: 9 });
-        chunk.write(I::Constant(num_1_index), 110);
-        chunk.write(I::Constant(num_2_index), 110);
-        chunk.write(I::Add, 111);
-        chunk.write(I::Constant(num_3_index), 112);
-        chunk.write(I::Div, 113);
-        chunk.write(I::Constant(num_4_index), 114);
-        chunk.write(I::Sub, 115);
+        unsafe {
+            *chunk.name_mut() = Some("simple_arithmetic".to_string());
+            let num_1_index = chunk.write_constant(Value { int: 14 }, &Type::INT);
+            let num_2_index = chunk.write_constant(Value { int: 5 }, &Type::INT);
+            let num_3_index = chunk.write_constant(Value { int: 3 }, &Type::INT);
+            let num_4_index = chunk.write_constant(Value { int: 9 }, &Type::INT);
+            chunk.write(I::PrimitiveConstant(num_1_index), 110);
+            chunk.write(I::PrimitiveConstant(num_2_index), 110);
+            chunk.write(I::Add, 111);
+            chunk.write(I::PrimitiveConstant(num_3_index), 112);
+            chunk.write(I::Div, 113);
+            chunk.write(I::PrimitiveConstant(num_4_index), 114);
+            chunk.write(I::Sub, 115);
+        }
 
         disassemble(&chunk);
 
@@ -382,7 +431,7 @@ mod tests {
     fn function() {
         let program = prog(indoc! {"
             let f = x: int => x + 1 in
-            f == f
+            f(1)
         "});
 
         disassemble(&program);
@@ -390,7 +439,7 @@ mod tests {
         let mut vm = VM::new();
         let val = vm.eval(&program);
 
-        unsafe { assert_eq!(val.boolean, true) };
+        unsafe { assert_eq!(val.int, 2) };
         assert_eq!(vm.stack.len(), 0);
     }
 
@@ -411,6 +460,84 @@ mod tests {
         let val = vm.eval(&program);
 
         unsafe { assert_eq!(val.int, 33) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn nested_function_call() {
+        let program = prog(indoc! {"
+            let f = x: int => x / 2 in
+            f (f (f (f (f 40))))
+        "});
+
+        disassemble(&program);
+
+        let mut vm = VM::new();
+        let val = vm.eval(&program);
+
+        unsafe { assert_eq!(val.int, 1) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn nested_closure_call() {
+        let program = prog(indoc! {"
+            let f = x: int => y: int => x + y in
+            f (f (f 1 2) 3) (f (f 4 5) 6)
+        "});
+
+        disassemble(&program);
+
+        let mut vm = VM::new();
+        let val = vm.eval(&program);
+
+        unsafe { assert_eq!(val.int, 21) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn nested_curried_closure_call_depth_2() {
+        let program = prog(indoc! {"
+            let church_zero = f: int -> int => n: int => n in
+            let church_succ =
+                church: (int -> int) -> int -> int =>
+                f: int -> int => n: int => f (church f n)
+            in
+            let church_two =
+                church_succ (church_succ (church_zero))
+            in
+            church_two (x: int => x + 1) 0
+        "});
+
+        disassemble(&program);
+
+        let mut vm = VM::new();
+        let val = vm.eval(&program);
+
+        unsafe { assert_eq!(val.int, 2) };
+        assert_eq!(vm.stack.len(), 0);
+    }
+
+    #[test]
+    fn nested_curried_closure_call_depth_3() {
+        let program = prog(indoc! {"
+            let church_zero = f: int -> int => n: int => n in
+            let church_succ =
+                church: (int -> int) -> int -> int =>
+                f: int -> int => n: int => f (church f n)
+            in
+            let church_three =
+                church_succ (church_succ (church_succ (church_zero)))
+            in
+            church_three (x: int => x + 1) 0
+        "});
+
+        disassemble(&program);
+
+        let mut vm = VM::new();
+        let val = vm.eval(&program);
+
+        unsafe { assert_eq!(val.int, 3) };
         assert_eq!(vm.stack.len(), 0);
     }
 }

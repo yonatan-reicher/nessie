@@ -2,8 +2,9 @@ pub mod manual_rc;
 
 pub use self::manual_rc::ManualRc;
 
-use crate::chunk::Chunk;
+use crate::chunk::prelude::*;
 use crate::r#type::*;
+use crate::vm::VM;
 use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 
@@ -11,9 +12,10 @@ use std::rc::Rc;
 pub union Value {
     pub int: i32,
     pub boolean: bool,
+    pub ptr: ManualRc<()>,
     pub string: ManualRc<str>,
     pub function: ManualRc<Function>,
-    pub ptr: ManualRc<()>,
+    pub closure_source: ManualRc<ClosureSource>,
 }
 
 impl Debug for Value {
@@ -39,7 +41,7 @@ impl Value {
     /// This string is copied to the heap, and must be manually memory managed.
     pub unsafe fn new_string(value: &str) -> Self {
         Value {
-            string: ManualRc::new(value),
+            string: ManualRc::from_str(value),
         }
     }
 
@@ -48,18 +50,22 @@ impl Value {
     /// This function is copied to the heap, and must be manually memory managed.
     pub unsafe fn new_function(function: NessieFn) -> Self {
         // TODO: Move the function instead of cloning it
-        let function: ManualRc<Function> = ManualRc::new(&Function::Nessie(function));
+        let function: ManualRc<Function> = ManualRc::new(Function::Nessie(function));
         Value { function }
     }
 
     pub unsafe fn new_native_function(function: NativeFn) -> Self {
-        let function: ManualRc<Function> = ManualRc::new(&Function::Native(function));
+        let function: ManualRc<Function> = ManualRc::new(Function::Native(function));
         Value { function }
     }
 
     pub unsafe fn new_closure(closure: Closure) -> Self {
-        let function: ManualRc<Function> = ManualRc::new(&Function::Closure(closure));
+        let function: ManualRc<Function> = ManualRc::new(Function::Closure(closure));
         Value { function }
+    }
+
+    pub unsafe fn new_closure_source(closure_source: ClosureSource) -> Self {
+        Value { closure_source: ManualRc::new(closure_source) }
     }
 
     /// Are two values equal?
@@ -80,6 +86,10 @@ impl Value {
                 // uncount the string
                 self.string.dec_ref();
             }
+            TypeKind::ClosureSource => {
+                // uncount the closure source
+                self.closure_source.dec_ref();
+            }
             TypeKind::Function { .. } => {
                 // uncount the function
                 self.function.dec_ref();
@@ -88,14 +98,14 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Function {
     Nessie(NessieFn),
     Native(NativeFn),
     Closure(Closure),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct NessieFn {
     pub chunk: Chunk,
 }
@@ -119,10 +129,35 @@ impl Debug for NativeFn {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+/// Creates a closure from a list of captured values.
+/// This value should not be exposed to user code.
+#[derive(Debug, Clone)]
+pub struct ClosureSource {
+    pub chunk: Rc<Chunk>,
+    pub drop_captured: Rc<[Instruction]>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Closure {
     pub chunk: Rc<Chunk>,
+    pub drop_captured: Rc<[Instruction]>,
     pub captured: Vec<Value>,
+}
+
+impl Closure {
+    pub fn new(closure_source: ClosureSource, captured: Vec<Value>) -> Self {
+        Self {
+            chunk: closure_source.chunk,
+            drop_captured: closure_source.drop_captured,
+            captured,
+        }
+    }
+}
+
+impl Drop for Closure {
+    fn drop(&mut self) {
+        VM::drop_closure(self);
+    }
 }
 
 pub mod prelude {

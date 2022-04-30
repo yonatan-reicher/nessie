@@ -174,6 +174,7 @@ impl Env {
                 let right = self.eval_type_expr(right);
                 Ok(Type::function(Rc::new(left?), Rc::new(right?)))
             }
+            TEKind::Paren(expr) => self.eval_type_expr(expr),
         }
     }
 

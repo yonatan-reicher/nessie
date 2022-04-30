@@ -2,6 +2,8 @@
 
 use crate::token::Line;
 use crate::value::Value;
+use crate::vm::VM;
+use crate::r#type::Type;
 use std::fmt::{self, Display, Formatter};
 
 type ConstantIndex = u16;
@@ -10,14 +12,16 @@ type ConstantIndex = u16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum Instruction {
-    /// Marks the end of a function's execution.
-    Return,
-    /// Pushes a constant value onto the stack from the constant pool.
-    Constant(ConstantIndex),
-    /// Pushes a true value onto the stack.
-    True,
-    /// Pushes a false value onto the stack.
-    False,
+    /// Pushes a primitive constant value onto the stack from the constant pool.
+    PrimitiveConstant(ConstantIndex),
+    /// Pushes a pointer constant value onto the stack from the constant pool.
+    PtrConstant(ConstantIndex),
+    /// Drops a primitive value placed one before the last value on the stack
+    PrimitiveDropAbove,
+    /// Pushes a primitive value onto the stack.
+    PrimitiveGetLocal(u16),
+    /// Pushes a pointer value onto the stack.
+    PtrGetLocal(u16),
     // Integer arithmetic instructions.
     Neg,
     Add,
@@ -25,39 +29,35 @@ pub enum Instruction {
     Mul,
     Div,
     Mod,
-    // Boolean arithmetic instructions
-    Not,
-    And,
-    Or,
-    Xor,
-    // String instructions
-    Concat,
-    // Comparison instructions
     Lt,
     Gt,
     Le,
     Ge,
     IntEq,
     IntNe,
+    // Boolean arithmetic instructions
+    /// Pushes a true value onto the stack.
+    True,
+    /// Pushes a false value onto the stack.
+    False,
+    Not,
+    And,
+    Or,
+    Xor,
     BoolEq,
     BoolNe,
+    // String instructions
+    Concat,
     StringEq,
     StringNe,
-    PtrEq,
-    PtrNe,
-    /// Drops a primitive value placed one before the last value on the stack
-    PrimitiveDropAbove,
-    /// Drops a pointer value placed one before the uppermost value on the stack
-    PtrDropAbove,
-    /// Pushes a primitive value onto the stack.
-    PrimitiveGetLocal(u16),
-    /// Pushes a pointer value onto the stack.
-    PtrGetLocal(u16),
+    /// Drops a string value placed one before the uppermost value on the stack
+    StringDropAbove,
     /// Jumps the specified number of instructions forward unconditionally.
     Jump(u16),
     /// Jumps the specified number of instructions forward, if the value on the
     /// top of the stack it consumes is a false.
     JumpIfFalse(u16),
+    // Function and closure instructions.
     /// Pops a value and function off the stack and calls it with the value.
     Call,
     /// Takes a closure with an empty capture list and a variable number of
@@ -67,6 +67,11 @@ pub enum Instruction {
     /// The value farthest from the top of the stack is the first on the
     /// capture list.
     Closure(u16),
+    ClosureSourceDropAbove,
+    /// Takes a closure placed one before the uppermost value on the stack and
+    /// frees and decreases all reference counts of its captured values and of
+    /// itself.
+    FunctionDropAbove,
 }
 
 impl Display for Instruction {
@@ -76,13 +81,21 @@ impl Display for Instruction {
     }
 }
 
-/// A sequence of byte code instructions with their parameters and line numbers.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Chunk {
-    instructions: Vec<Instruction>,
-    instruction_lines: Vec<Line>,
-    constants: Vec<Value>,
+    /// Optional name for the chunk - for debuging nessie code.
     name: Option<String>,
+    /// The set of constant values contained in the chunk.
+    constants: Vec<Value>,
+    /// The code for dropping the constants - called with an arbitrary value
+    /// at the top of the stack and all the constants below it.
+    /// For now, this is not `Instructions` because we don't need debuging
+    /// info.
+    constants_drop: Vec<Instruction>,
+    /// The instructions of the chunk.
+    instructions: Vec<Instruction>,
+    /// Line information for the instructions.
+    instruction_lines: Vec<Line>,
 }
 
 impl Chunk {
@@ -94,20 +107,8 @@ impl Chunk {
         self.name.as_deref()
     }
 
-    pub fn name_mut(&mut self) -> Option<&mut String> {
-        self.name.as_mut()
-    }
-
-    /// Adds a new instruction to the chunk with the given line information.
-    pub fn write(&mut self, op: Instruction, line: Line) {
-        self.instructions.push(op);
-        self.instruction_lines.push(line);
-    }
-
-    pub fn write_constant(&mut self, value: Value) -> ConstantIndex {
-        let index = self.constants.len() as ConstantIndex;
-        self.constants.push(value);
-        index
+    pub fn name_mut(&mut self) -> &mut Option<String> {
+        &mut self.name
     }
 
     pub fn instructions(&self) -> &[Instruction] {
@@ -124,6 +125,37 @@ impl Chunk {
 
     pub fn constants(&self) -> &[Value] {
         &self.constants
+    }
+
+    pub fn constants_drop(&self) -> &[Instruction] {
+        &self.constants_drop
+    }
+
+    // 1 + 1 = 
+
+    /// Adds a new instruction to the chunk with the given line information.
+    pub fn write(&mut self, op: Instruction, line: Line) {
+        self.instructions.push(op);
+        self.instruction_lines.push(line);
+    }
+
+    /// Adds a constant value to the chunk.
+    ///
+    /// # Safety
+    /// This function is unsafe because the value must be dropped correctly.
+    /// 
+    /// Ensure that `ty` is the correct type for the value.
+    pub unsafe fn write_constant(&mut self, value: Value, ty: &Type) -> ConstantIndex {
+        let index = self.constants.len() as ConstantIndex;
+        self.constants.push(value);
+        self.constants_drop.extend_from_slice(ty.drop_above());
+        index
+    }
+}
+
+impl Drop for Chunk {
+    fn drop(&mut self) {
+        VM::drop_chunk(self);
     }
 }
 
