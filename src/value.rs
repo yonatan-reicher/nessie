@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 #[derive(Clone, Copy)]
 pub union Value {
-    pub int: i32,
+    pub int: i64,
     pub boolean: bool,
     pub ptr: ManualRc<()>,
     pub string: ManualRc<str>,
@@ -28,7 +28,7 @@ impl Debug for Value {
 }
 
 impl Value {
-    pub fn new_int(value: i32) -> Self {
+    pub fn new_int(value: i64) -> Self {
         Value { int: value }
     }
 

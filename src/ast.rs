@@ -21,7 +21,7 @@ pub struct Expr {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExprKind {
     /// An integer literal
-    Int(i32),
+    Int(i64),
     /// A boolean true literal
     True,
     /// A boolean false literal
@@ -52,6 +52,7 @@ pub enum ExprKind {
     /// An anonymous function expression
     Function {
         arg: NameDeclaration,
+        recursion_var: Option<UniqueName>,
         body: Box<Expr>,
     },
     /// An application expression

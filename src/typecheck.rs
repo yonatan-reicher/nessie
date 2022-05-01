@@ -31,10 +31,6 @@ pub struct Error {
     pub span: Span,
 }
 
-pub fn typecheck(program: &mut Program) -> Result<(), Vec<Error>> {
-    Env::new().typecheck(program)
-}
-
 impl Display for ErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use ErrorKind::*;
@@ -298,6 +294,7 @@ impl Env {
                         type_expr: arg_type_expr,
                         ty: arg_type,
                     },
+                recursion_var,
                 body,
             } => {
                 // Just until there is real type inference
@@ -318,6 +315,17 @@ impl Env {
                         ty: arg_type.clone().unwrap(),
                     },
                 ));
+                *recursion_var = Some(self.declare_local(
+                    &Rc::from("recurse"),
+                    Local {
+                        ty: Type::function(
+                            Rc::new(arg_type.clone().unwrap()),
+                            // Just for now! assume the return type is `int`.
+                            Rc::new(Type::INT.clone()),
+                        ),
+                    },
+                ));
+
                 self.visit(body)?;
                 self.undeclare_local(arg_name);
                 expr.ty = Some(Type::function(
@@ -397,11 +405,6 @@ impl Env {
             }
         }
         self.locals.remove(name);
-    }
-
-    fn make_unique_name(&self, name: Rc<str>) -> UniqueName {
-        let shadow_count = self.locals.get(&name).map(Vec1::len).unwrap_or(0);
-        UniqueName { name, shadow_count }
     }
 
     fn get_unique_name(&self, name: Rc<str>) -> Option<UniqueName> {
