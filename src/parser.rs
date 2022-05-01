@@ -459,6 +459,7 @@ impl<'a> Parser<'a> {
                 start,
                 ExprKind::Function {
                     arg: NameDeclaration::new(arg_name?, arg_type_expr?),
+                    recursion_var: None,
                     body: Box::new(body?),
                 },
             )))

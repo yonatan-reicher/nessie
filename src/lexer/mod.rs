@@ -251,7 +251,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn advance_int_literal(&mut self) -> Result<Option<i32>, Error> {
+    fn advance_int_literal(&mut self) -> Result<Option<i64>, Error> {
         if let Some('0'..='9') = self.current_char() {
             let start = self.position;
             while let Some('0'..='9') = self.current_char() {

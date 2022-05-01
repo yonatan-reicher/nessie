@@ -7,10 +7,6 @@ use std::mem;
 use std::rc::Rc;
 use vec1::Vec1;
 
-pub fn compile(program: &Program) -> Chunk {
-    Compiler::new().compile(program)
-}
-
 type EKind = ExprKind;
 
 type TKind = TypeKind;
@@ -171,9 +167,10 @@ impl Compiler {
                 names.extend(self.free_unique_names(else_));
                 names
             }
-            EKind::Function { arg, body } => {
+            EKind::Function { arg, recursion_var, body } => {
                 let mut names = self.free_unique_names(body);
                 names.remove(arg.unique_name.as_ref().unwrap());
+                names.remove(recursion_var.as_ref().unwrap());
                 names
             }
         }
@@ -265,6 +262,7 @@ impl Compiler {
                         ty: arg_type,
                         ..
                     },
+                recursion_var,
                 body,
             } => {
                 let captured_variables: Vec<_> =
@@ -285,13 +283,15 @@ impl Compiler {
                 self.frames.push({
                     let mut frame = Frame::default();
                     *frame.chunk.name_mut() = Some(format!("{} => ...", unique_arg_name.as_ref().unwrap().name));
-                    // make place for the argument and the captured variables
-                    frame.offset += captured_variables.len() + 1;
+                    // make place for the argument, recursion variable and
+                    // the captured variables
+                    frame.offset += captured_variables.len() + 2;
                     // declare the parameter and the captured variables as
                     // locals
                     frame.locals.insert(unique_arg_name.clone().unwrap(), 0);
+                    frame.locals.insert(recursion_var.clone().unwrap(), 1);
                     for (i, (name, _)) in captured_variables.iter().enumerate() {
-                        frame.locals.insert(name.clone(), i + 1);
+                        frame.locals.insert(name.clone(), i + 2);
                     }
                     frame
                 });
@@ -307,6 +307,9 @@ impl Compiler {
                     // drop for this.
                     self.chunk_mut().write(I::PrimitiveDropAbove, expr.span.line);
                 }
+                // Drop the recursion variable.
+                self.emit_stack_drop_above(expr.ty.as_ref().unwrap(), expr.span.line);
+                // Drop the argument.
                 self.emit_stack_drop_above(arg_type.as_ref().unwrap(), body.span.line);
 
                 // Get the compiled chunk
@@ -363,7 +366,7 @@ impl Compiler {
         frame.chunk
     }
 
-    pub fn declare(&mut self, unique_name: UniqueName, ty: Type) {
+    pub fn declare(&mut self, unique_name: UniqueName, _ty: Type) {
         self.add_local(unique_name);
         *self.offset_mut() += 1;
     }

@@ -157,7 +157,7 @@ make_token_kind! {
     Greater ">",
     Lesser "<",
     ----------------
-    IntLiteral i32,
+    IntLiteral i64,
     String Rc<str>,
     Identifier Rc<str>,
 }

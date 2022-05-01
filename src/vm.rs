@@ -1,6 +1,6 @@
 use crate::chunk::{Chunk, Instruction};
 use crate::disassemble::{self, disassemble_instruction};
-use crate::value::{Closure, Function, NativeFn, NessieFn, Value};
+use crate::value::prelude::*;
 
 type I = Instruction;
 
@@ -19,32 +19,39 @@ impl VM {
         }
     }
 
-    unsafe fn run_nessie_function(&mut self, function: &NessieFn) {
-        let old_frame_start = self.frame_start;
-        self.frame_start = self.stack.len() - 1;
-        self.run(&function.chunk);
-        self.frame_start = old_frame_start;
-    }
-
     unsafe fn run_native_function(&mut self, function: &NativeFn) {
+        // Ignore the recursion variable.
+        self.stack.pop();
+        // Call the real function.
         (function.function)(self.stack.last().unwrap().clone());
     }
 
+    unsafe fn run_nessie_function(&mut self, function: &NessieFn) {
+        self.run(&function.chunk);
+    }
+
     unsafe fn run_closure(&mut self, closure: &Closure) {
-        let old_frame_start = self.frame_start;
-        self.frame_start = self.stack.len() - 1;
         // Push the closure's captured variables.
         self.stack.extend_from_slice(&closure.captured);
         self.run(&closure.chunk);
-        self.frame_start = old_frame_start;
     }
 
-    unsafe fn run_function(&mut self, function: &Function) {
-        match function {
+    unsafe fn run_function(&mut self, function: ManualRc<Function>) {
+        // Start a new stack frame.
+        let old_frame_start = self.frame_start;
+        self.frame_start = self.stack.len() - 1;
+        // Push the function itself for recursion.
+        // The function is responsible for popping itself off the stack.
+        self.stack.push(Value { function });
+
+        match function.get() {
             Function::Nessie(nessie_fn) => self.run_nessie_function(nessie_fn),
-            Function::Native(native_fn) => self.run_native_function(native_fn),
             Function::Closure(closure) => self.run_closure(closure),
+            Function::Native(native_fn) => self.run_native_function(native_fn),
         }
+
+        // Return to the previous stack frame.
+        self.frame_start = old_frame_start;
     }
 
     /// Executes the virtual machine.
@@ -103,7 +110,7 @@ impl VM {
             ($field: ident) => {{
                 let mut value = self.stack.remove(self.stack.len() - 2);
                 unsafe { value.$field.dec_ref() };
-            }}
+            }};
         }
 
         #[cfg(debug_assertions)]
@@ -179,9 +186,10 @@ impl VM {
                 }
             }
             I::Call => {
-                let mut function = unsafe { self.stack.pop().unwrap().function };
-                unsafe { self.run_function(function.get()) };
-                unsafe { function.dec_ref() };
+                unsafe {
+                    let value = self.stack.pop().unwrap();
+                    self.run_function(value.function);
+                }
             }
             I::Closure(captured_len) => {
                 let mut value = unsafe { self.stack.pop().unwrap().closure_source };
@@ -225,10 +233,7 @@ impl VM {
 
         #[cfg(debug_assertions)]
         {
-            print!(
-                "== end of {} == \n",
-                chunk.name().unwrap_or("<unknown>")
-            );
+            print!("== end of {} == \n", chunk.name().unwrap_or("<unknown>"));
         }
     }
 
@@ -248,12 +253,10 @@ impl VM {
     }
 
     pub(crate) fn drop_chunk(chunk: &Chunk) {
-        dbg!("Dropping chunk");
         VM::drop_values(chunk.constants(), &chunk.constants_drop(), chunk);
     }
 
     pub(crate) fn drop_closure(closure: &Closure) {
-        dbg!("Dropping closure");
         VM::drop_values(&closure.captured, &closure.drop_captured, &closure.chunk);
     }
 }
@@ -288,7 +291,7 @@ mod tests {
                 panic!();
             })
             .unwrap();
-        crate::typecheck::typecheck(&mut program)
+        crate::typecheck::Env::new().typecheck(&mut program)
             .map_err(|e| {
                 for e in e {
                     println!("{}", e.with_source(code));
@@ -296,8 +299,7 @@ mod tests {
                 panic!();
             })
             .unwrap();
-        let chunk = crate::codegen::compile(&program);
-        dbg!(&chunk);
+        let chunk = crate::codegen::Compiler::new().compile(&program);
         chunk
     }
 
