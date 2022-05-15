@@ -9,3 +9,4 @@ edition = "2021"
 indoc = "1.0"
 clap = { version = "3.1.6", features = ["derive"] }
 vec1 = "1.8.0"
+thiserror = "1.0"

@@ -1,16 +1,16 @@
 //! This module contains the parser for the language.
 
 use crate::ast::*;
-use crate::source_error::SourceError;
 use crate::token::prelude::*;
-use std::fmt::{self, Display, Formatter};
+use crate::source_error::Spanned;
 use std::rc::Rc;
+use thiserror::Error;
 
 type EKind = ExprKind;
 
 type TEKind = TypeExprKind;
 
-pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<Error>> {
+pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<Spanned<Error>>> {
     let mut parser = Parser::new(tokens);
 
     match parser.program() {
@@ -19,54 +19,26 @@ pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<Error>> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ErrorKind {
+#[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Error {
+    #[error("expected an expression")]
     ExpectedExpression,
+    #[error("expected an expression atom")]
     ExpectedExpressionAtom,
+    #[error("left over tokens")]
     LeftoverSource,
+    #[error("unclosed delimiter")]
     UnclosedDelimiter,
+    #[error("expected an identifier")]
     ExpectedIdentifier,
+    #[error("expected a {0}")]
     ExpectedToken(TokenKind),
+    #[error("empty program")]
     EmptyCode,
+    #[error("expected a type expression")]
     ExpectedTypeExpr,
+    #[error("unary operator is missing an operand")]
     UnaryOperatorMissingOperand,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub span: Span,
-}
-
-impl Display for ErrorKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use ErrorKind::*;
-        match self {
-            ExpectedExpression => write!(f, "Expected expression"),
-            ExpectedExpressionAtom => write!(f, "Expected expression atom"),
-            UnclosedDelimiter => write!(f, "Unclosed delimiter"),
-            LeftoverSource => write!(f, "The source code contained leftover characters"),
-            ExpectedIdentifier => write!(f, "Expected identifier"),
-            ExpectedToken(tk) => write!(f, "Expected a {}", tk),
-            EmptyCode => write!(f, "The source code is empty"),
-            ExpectedTypeExpr => write!(f, "Expected type expression"),
-            UnaryOperatorMissingOperand => write!(f, "Unary operator missing operand"),
-        }
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl SourceError for Error {
-    fn get_span(&self) -> Span {
-        self.span
-    }
 }
 
 type TKind = TokenKind;
@@ -75,7 +47,7 @@ type TKind = TokenKind;
 struct Parser<'a> {
     tokens: &'a [Token],
     index: usize,
-    errors: Vec<Error>,
+    errors: Vec<Spanned<Error>>,
 }
 
 fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
@@ -180,13 +152,13 @@ impl<'a> Parser<'a> {
         Span { start, end, line }
     }
 
-    fn report_error(&mut self, kind: ErrorKind, start: usize) {
+    fn report_error(&mut self, error: Error, start: usize) {
         let span = self.span_from_token_indices(start, self.index);
-        self.errors.push(Error { kind, span });
+        self.errors.push(Spanned::new(span, error));
     }
 
-    fn report_error_here(&mut self, kind: ErrorKind) {
-        self.report_error(kind, self.index)
+    fn report_error_here(&mut self, error: Error) {
+        self.report_error(error, self.index)
     }
 
     fn make_expr_at(&self, start_index: usize, end_index: usize, kind: ExprKind) -> Expr {
@@ -245,7 +217,7 @@ impl<'a> Parser<'a> {
                 self.index += 1;
                 let expr = self.expr();
                 if try_kind(self.tokens.get(self.index)) != Some(&TokenKind::RightParen) {
-                    self.report_error_here(ErrorKind::UnclosedDelimiter);
+                    self.report_error_here(Error::UnclosedDelimiter);
                 }
                 self.index += 1;
                 expr.map(|expr| {
@@ -301,7 +273,7 @@ impl<'a> Parser<'a> {
                     let kind = EKind::Unary(op, Box::new(atom));
                     Ok(Some(self.make_expr(start, kind)))
                 } else {
-                    self.report_error(ErrorKind::UnaryOperatorMissingOperand, start);
+                    self.report_error(Error::UnaryOperatorMissingOperand, start);
                     Err(())
                 }
             })
@@ -317,7 +289,7 @@ impl<'a> Parser<'a> {
             } else if let Some(expr) = self.application_exprs()? {
                 Ok(expr)
             } else {
-                self.report_error_here(ErrorKind::ExpectedExpressionAtom);
+                self.report_error_here(Error::ExpectedExpressionAtom);
                 Err(())
             };
         }
@@ -351,7 +323,7 @@ impl<'a> Parser<'a> {
             self.index += 1;
             Ok(())
         } else {
-            self.report_error_here(ErrorKind::ExpectedToken(kind));
+            self.report_error_here(Error::ExpectedToken(kind));
             Err(())
         }
     }
@@ -361,7 +333,7 @@ impl<'a> Parser<'a> {
             self.index += 1;
             Ok(name.clone())
         } else {
-            self.report_error_here(ErrorKind::ExpectedIdentifier);
+            self.report_error_here(Error::ExpectedIdentifier);
             Err(())
         }
     }
@@ -435,7 +407,7 @@ impl<'a> Parser<'a> {
         let start = self.index;
         let res = self.function_type_expr();
         if res.is_err() {
-            self.report_error(ErrorKind::ExpectedTypeExpr, start);
+            self.report_error(Error::ExpectedTypeExpr, start);
             return Err(());
         }
         res
@@ -485,7 +457,7 @@ impl<'a> Parser<'a> {
             }),
         };
         if res.is_err() {
-            self.report_error(ErrorKind::ExpectedExpression, start);
+            self.report_error(Error::ExpectedExpression, start);
         }
         res
     }
@@ -493,13 +465,13 @@ impl<'a> Parser<'a> {
     pub fn program(&mut self) -> Result<Program, ()> {
         // Edge case - empty file
         if self.tokens.is_empty() {
-            self.report_error_here(ErrorKind::EmptyCode);
+            self.report_error_here(Error::EmptyCode);
             return Err(());
         }
 
         let body = self.expr();
         if self.in_range() {
-            self.report_error_here(ErrorKind::LeftoverSource);
+            self.report_error_here(Error::LeftoverSource);
         }
         body.map(|body| Program { body })
     }
