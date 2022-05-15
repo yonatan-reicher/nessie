@@ -2,10 +2,10 @@
 
 mod string_intern;
 
-use crate::source_error::SourceError;
+use crate::source_error::Spanned;
 use crate::token::prelude::*;
-use std::fmt::{self, Display, Formatter};
 use string_intern::StringInterner;
+use thiserror::Error;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Lexer<'source> {
@@ -18,44 +18,16 @@ pub struct Lexer<'source> {
     interned_strings: StringInterner,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ErrorKind {
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Error {
+    #[error("invalid character: {0}")]
     InvalidCharacter(char),
+    #[error("unterminated string literal")]
     UnterminatedString,
-    ExpectedHexDigit,
+    #[error("invalid escape sequence")]
     InvalidEscapeSequence,
-}
-
-impl Display for ErrorKind {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        use ErrorKind::*;
-        match self {
-            InvalidCharacter(c) => write!(f, "Invalid character: {}", c),
-            ExpectedHexDigit => write!(f, "Expected hex digit"),
-            UnterminatedString => write!(f, "Unterminated string"),
-            InvalidEscapeSequence => write!(f, "Invalid escape sequence"),
-        }
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl SourceError for Error {
-    fn get_span(&self) -> Span {
-        self.span
-    }
+    #[error("invalid unicode escape sequence")]
+    InvalidUnicodeEscapeSequence,
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -66,7 +38,7 @@ fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '-'
 }
 
-pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
+pub fn lex(source: &str) -> Result<Vec<Token>, Spanned<Error>> {
     let mut lexer = Lexer::new(source);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.lex_token()? {
@@ -105,13 +77,13 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn make_error(&self, start: Position, kind: ErrorKind) -> Error {
+    fn make_error(&self, start: Position, source: Error) -> Spanned<Error> {
         let span = Span {
             start,
             end: self.position,
             line: self.line,
         };
-        Error { kind, span }
+        Spanned::new(span, source)
     }
 
     fn make_token(&mut self, start: Position, kind: TokenKind) -> Token {
@@ -124,7 +96,7 @@ impl<'source> Lexer<'source> {
         Token { kind, span }
     }
 
-    pub fn lex_token(&mut self) -> Result<Option<Token>, Error> {
+    pub fn lex_token(&mut self) -> Result<Option<Token>, Spanned<Error>> {
         self.skip_whitespace();
 
         let start = self.position;
@@ -151,7 +123,7 @@ impl<'source> Lexer<'source> {
                 Ok(Some(self.make_token(start, kind)))
             } else {
                 self.advance_char();
-                Err(self.make_error(start, ErrorKind::InvalidCharacter(c)))
+                Err(self.make_error(start, Error::InvalidCharacter(c)))
             }
         } else {
             Ok(None)
@@ -168,7 +140,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn advance_escape_char(&mut self) -> Result<Option<char>, Error> {
+    fn advance_escape_char(&mut self) -> Result<Option<char>, Spanned<Error>> {
         let start = self.position;
         expect_char! { self;
             Some('\\') => {
@@ -187,12 +159,12 @@ impl<'source> Lexer<'source> {
                             char::from_u32(((c1 as u32) << 4) | (c2 as u32))
                             .ok_or_else(|| self.make_error(
                                 start,
-                                ErrorKind::InvalidEscapeSequence
+                                Error::InvalidEscapeSequence
                             ))
                         } else {
                             Err(self.make_error(
                                 start,
-                                ErrorKind::ExpectedHexDigit,
+                                Error::InvalidEscapeSequence,
                             ))
                         }
                     },
@@ -210,18 +182,18 @@ impl<'source> Lexer<'source> {
                             )
                             .ok_or_else(|| self.make_error(
                                 start,
-                                ErrorKind::InvalidEscapeSequence
+                                Error::InvalidUnicodeEscapeSequence
                             ))
                         } else {
                             Err(self.make_error(
                                 start,
-                                ErrorKind::ExpectedHexDigit,
+                                Error::InvalidUnicodeEscapeSequence,
                             ))
                         }
                     },
                     _ => Err(self.make_error(
                         self.position,
-                        ErrorKind::InvalidEscapeSequence,
+                        Error::InvalidEscapeSequence,
                     ))
                 }
                 .map(Some)
@@ -231,7 +203,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn advance_string_literal(&mut self) -> Result<Option<String>, Error> {
+    fn advance_string_literal(&mut self) -> Result<Option<String>, Spanned<Error>> {
         if let Some(quote @ ('"' | '\'')) = self.current_char() {
             self.advance_char();
             let start = self.position;
@@ -241,7 +213,7 @@ impl<'source> Lexer<'source> {
                 ret.push(
                     self
                     .advance_escape_char()?
-                    .ok_or_else(|| self.make_error(start, ErrorKind::UnterminatedString))?
+                    .ok_or_else(|| self.make_error(start, Error::UnterminatedString))?
                 );
             }
             self.advance_char();
@@ -251,7 +223,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn advance_int_literal(&mut self) -> Result<Option<i64>, Error> {
+    fn advance_int_literal(&mut self) -> Result<Option<i64>, Spanned<Error>> {
         if let Some('0'..='9') = self.current_char() {
             let start = self.position;
             while let Some('0'..='9') = self.current_char() {

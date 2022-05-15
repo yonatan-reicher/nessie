@@ -3,11 +3,11 @@
 
 use crate::ast::*;
 use crate::r#type::{Type, TypeKind};
-use crate::source_error::SourceError;
+use crate::source_error::Spanned;
 use crate::token::Span;
 use std::collections::HashMap;
-use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
+use thiserror::Error;
 use vec1::*;
 
 type EKind = ExprKind;
@@ -16,67 +16,23 @@ type TKind = TypeKind;
 
 type TEKind = TypeExprKind;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ErrorKind {
-    OperatorTypeMissmatch { expected: Type, found: Type },
-    ProgramTypeUnknown,
-    UndefinedVariable(Rc<str>),
+#[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Error {
+    #[error("type {0} is not a function")]
     NotAFunction(Type),
+    #[error("the type of an expression cannot be inferred")]
     UnknownType,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub span: Span,
-}
-
-impl Display for ErrorKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use ErrorKind::*;
-        match self {
-            OperatorTypeMissmatch { expected, found } => {
-                write!(
-                    f,
-                    "Operator argument should have type {} but had type {}",
-                    expected, found,
-                )
-            }
-            ProgramTypeUnknown => {
-                write!(f, "The program's type could not be infered")
-            }
-            UndefinedVariable(name) => {
-                write!(f, "The variable '{name}' does not exist in this context")
-            }
-            NotAFunction(t) => {
-                write!(
-                    f,
-                    "The type '{}' is not a function and cannot be applied",
-                    t
-                )
-            }
-            UnknownType => write!(f, "The type of this expression is unknown"),
-        }
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl SourceError for Error {
-    fn get_span(&self) -> Span {
-        self.span
-    }
+    #[error("The type of this expression was expected to be {expected} but was {actual}")]
+    OperatorTypeMissmatch { expected: Type, actual: Type },
+    #[error("The program's type could not be inferred")]
+    ProgramTypeUnknown,
+    #[error("Variable {0} is not defined")]
+    UndefinedVariable(Rc<str>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Env {
-    errors: Vec<Error>,
+    errors: Vec<Spanned<Error>>,
     locals: HashMap<Rc<str>, Vec1<Local>>,
     type_locals: HashMap<Rc<str>, Type>,
 }
@@ -152,16 +108,17 @@ impl Env {
         }
     }
 
+    fn report_error(&mut self, span: Span, error: Error) {
+        self.errors.push(Spanned::new(span, error));
+    }
+
     pub fn eval_type_expr(&mut self, expr: &TypeExpr) -> Result<Type, ()> {
         match &expr.kind {
             TEKind::Var(name) => {
                 if let Some(ty) = self.type_locals.get(name) {
                     Ok(ty.clone())
                 } else {
-                    self.errors.push(Error {
-                        kind: ErrorKind::UndefinedVariable(name.clone()),
-                        span: expr.span,
-                    });
+                    self.report_error(expr.span, Error::UndefinedVariable(name.clone()));
                     Err(())
                 }
             }
@@ -174,14 +131,11 @@ impl Env {
         }
     }
 
-    pub fn typecheck(&mut self, program: &mut Program) -> Result<(), Vec<Error>> {
+    pub fn typecheck(&mut self, program: &mut Program) -> Result<(), Vec<Spanned<Error>>> {
         let _ = self.visit(&mut program.body);
 
         if program.body.ty.is_none() {
-            self.errors.push(Error {
-                kind: ErrorKind::ProgramTypeUnknown,
-                span: program.body.span,
-            });
+            self.report_error(program.body.span, Error::ProgramTypeUnknown);
         }
 
         if self.errors.is_empty() {
@@ -274,10 +228,7 @@ impl Env {
                     expr.ty = Some(local.last().ty.clone());
                     *unique_name = self.get_unique_name(name.clone());
                 } else {
-                    self.errors.push(Error {
-                        kind: ErrorKind::UndefinedVariable(name.clone()),
-                        span: expr.span,
-                    })
+                    self.report_error(expr.span, Error::UndefinedVariable(name.clone()));
                 }
             }
             ExprKind::If { cond, then, else_ } => {
@@ -299,10 +250,7 @@ impl Env {
             } => {
                 // Just until there is real type inference
                 if arg_type_expr.is_none() {
-                    self.errors.push(Error {
-                        kind: ErrorKind::UnknownType,
-                        span: expr.span,
-                    });
+                    self.report_error(expr.span, Error::UnknownType);
                     Err(())?;
                 }
                 let _ = arg_type.insert(
@@ -344,10 +292,7 @@ impl Env {
                         expr.ty = Some(ret_type.as_ref().clone());
                     }
                     Some(_) => {
-                        self.errors.push(Error {
-                            kind: ErrorKind::NotAFunction(func.ty.clone().unwrap()),
-                            span: expr.span,
-                        });
+                        self.report_error(expr.span, Error::NotAFunction(func.ty.clone().unwrap()));
                         Err(())?;
                     }
                     None => {
@@ -367,13 +312,13 @@ impl Env {
         // expression's type could not be infered, we already know it
         match &expr.ty {
             Some(expr_ty) if expr_ty != &ty => {
-                self.errors.push(Error {
-                    kind: ErrorKind::OperatorTypeMissmatch {
+                self.report_error(
+                    expr.span,
+                    Error::OperatorTypeMissmatch {
                         expected: ty.clone(),
-                        found: expr_ty.clone(),
+                        actual: expr_ty.clone(),
                     },
-                    span: expr.span,
-                });
+                );
             }
             _ => (),
         }
@@ -415,5 +360,4 @@ impl Env {
     pub fn declare(&mut self, name: Rc<str>, ty: Type) -> UniqueName {
         self.declare_local(&name, Local { ty })
     }
-
 }

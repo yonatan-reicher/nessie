@@ -265,7 +265,8 @@ impl VM {
 mod tests {
     use super::*;
     use crate::r#type::Type;
-    use crate::source_error::SourceError;
+    use crate::source_error::Spanned;
+    use std::io::stdout;
     use indoc::indoc;
 
     /// This should be used instead of writing to stdout directly,
@@ -281,12 +282,12 @@ mod tests {
 
     fn prog(code: &str) -> Chunk {
         let tokens = crate::lexer::lex(code)
-            .map_err(|e| println!("{}", e.with_source(code)))
+            .map_err(|e| e.show_spanned_error(code, stdout()))
             .unwrap();
         let mut program = crate::parser::parse(&tokens)
             .map_err(|e| {
                 for e in e {
-                    println!("{}", e.with_source(code));
+                    let _ = e.show_spanned_error(code, stdout());
                 }
                 panic!();
             })
@@ -294,7 +295,7 @@ mod tests {
         crate::typecheck::Env::new().typecheck(&mut program)
             .map_err(|e| {
                 for e in e {
-                    println!("{}", e.with_source(code));
+                    let _ = e.show_spanned_error(code, stdout());
                 }
                 panic!();
             })

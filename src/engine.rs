@@ -19,53 +19,31 @@ use crate::typecheck;
 use crate::vm;
 
 // other
-use source_error::SourceError;
-use std::fmt::{self, Display, Formatter};
+use source_error::Spanned;
 use std::io::{self, Write};
 use std::rc::Rc;
 use std::result;
+use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("{kind}")]
 pub struct Error {
+    #[source]
     pub kind: ErrorKind,
     /// The original source code.
     /// TODO: Save only the relevant part of the source code.
     source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
-    Lex(lexer::Error),
-    Parse(Vec<parser::Error>),
-    Typecheck(Vec<typecheck::Error>),
+    #[error("lexing error")]
+    Lex(#[source] Spanned<lexer::Error>),
+    #[error("parsing errors")]
+    Parse(Vec<Spanned<parser::Error>>),
+    #[error("typechecking errors")]
+    Typecheck(Vec<Spanned<typecheck::Error>>),
 }
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        use ErrorKind::*;
-        match &self.kind {
-            Lex(err) => {
-                writeln!(f, "Lexing error:")?;
-                writeln!(f, "{}", err.with_source(&self.source))?;
-            }
-            Parse(err) => {
-                writeln!(f, "Parsing errors:")?;
-                for e in err {
-                    writeln!(f, "{}", e.with_source(&self.source))?;
-                }
-            }
-            Typecheck(errors) => {
-                writeln!(f, "Type errors:")?;
-                for e in errors {
-                    writeln!(f, "{}", e.with_source(&self.source))?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub type Result<T> = result::Result<T, Error>;
 
