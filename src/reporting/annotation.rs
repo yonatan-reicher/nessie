@@ -4,26 +4,6 @@ use std::error::Error;
 use std::fmt::Debug;
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[error("at {span:?}: {value}")]
-pub struct Spanned<T> {
-    pub span: Span,
-    pub value: T,
-}
-
-impl<T> Spanned<T> {
-    pub fn new(span: Span, value: T) -> Self {
-        Self { span, value }
-    }
-
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
-        Spanned {
-            span: self.span,
-            value: f(self.value),
-        }
-    }
-}
-
 impl<E: Error> Spanned<E> {
     pub fn show_spanned_error<W: Write>(&self, source: &str, mut f: W) -> Result<()> {
          let span @ Span { start, end, line } = self.span;
@@ -94,3 +74,62 @@ impl<E: Error> Spanned<E> {
 //         Display::fmt(self, f)
 //     }
 // }
+
+/// A value `T` which is located at a specific region in the source code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Located<T> {
+    pub region: Region,
+    pub value: T,
+}
+
+impl<T> Located<T> {
+    /// Applies a function to the contained value.
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Located<U> {
+        Located {
+            region: self.region,
+            value: f(self.value),
+        }
+    }
+
+    pub fn as_ref(&self) -> Located<&T> {
+        self.map(|x| &x)
+    }
+
+    pub fn as_mut(&mut self) -> Located<&mut T> {
+        self.map(|x| &mut x)
+    }
+}
+
+
+/// A part of the source code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Region(pub Position, pub Position);
+
+impl Region {
+    /// Creates a region as big as the space of two given regions.
+    pub fn merge(&self, other: &Region) -> Region {
+        Region(
+            Position::min(self.0, other.0),
+            Position::max(self.1, other.1),
+        )
+    }
+}
+
+/// A position in the source code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Position {
+    pub line: u16,
+    pub column: u16,
+}
+
+impl PartialOrd for Position {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Position {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.line.cmp(&other.line).then(self.column.cmp(&other.column))
+    }
+}

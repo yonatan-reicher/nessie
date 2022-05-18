@@ -3,7 +3,6 @@
 //! source code and potentially contains semantic information.
 
 use crate::r#type::Type;
-use crate::token::Span;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

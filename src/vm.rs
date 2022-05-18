@@ -265,7 +265,6 @@ impl VM {
 mod tests {
     use super::*;
     use crate::r#type::Type;
-    use crate::source_error::Spanned;
     use std::io::stdout;
     use indoc::indoc;
 

@@ -5,6 +5,8 @@
 
 // Internal modules:
 
+mod reporting;
+
 // data types
 mod token;
 mod value;
@@ -19,7 +21,6 @@ mod typecheck;
 mod codegen;
 mod vm;
 mod disassemble;
-mod source_error;
 
 // api
 mod engine;

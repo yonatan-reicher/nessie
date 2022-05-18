@@ -1,5 +1,6 @@
 //! This module contains the parser for the language.
 
+use crate::reporting::annotation::Located;
 use crate::ast::*;
 use crate::token::prelude::*;
 use crate::source_error::Spanned;
