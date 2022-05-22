@@ -1,79 +1,5 @@
 use std::io::{Write, Result};
-use crate::token::Span;
-use std::error::Error;
 use std::fmt::Debug;
-use thiserror::Error;
-
-impl<E: Error> Spanned<E> {
-    pub fn show_spanned_error<W: Write>(&self, source: &str, mut f: W) -> Result<()> {
-         let span @ Span { start, end, line } = self.span;
-         let length = span.len();
-         let line_start = source[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-         let line_end = source[end..].find('\n').map(|i| i + end).unwrap_or(source.len());
-         let line_str = &source[line_start..line_end];
-         let column = start - line_start;
- 
-         let prefix = format!("line {}:", line + 1);
-         writeln!(f, "{} {}", prefix, line_str).unwrap();
-         write!(f, "{}", " ".repeat(column + prefix.len() + 1)).unwrap();
-         writeln!(f, "{}", "^".repeat(length)).unwrap();
-         writeln!(f, "{}", self.value).unwrap();
-         Ok(())
-     }
-}
-
-// pub trait SourceError: Error {
-//     fn get_span(&self) -> Span;
-// 
-//     fn with_source<'a, 'b>(&'a self, source: &'b str) -> SourceErrorWithSource<'a, 'b, Self>
-//     where
-//         Self: Sized,
-//     {
-//         SourceErrorWithSource {
-//             source_error: self,
-//             source,
-//         }
-//     }
-// }
-// 
-// #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// pub struct SourceErrorWithSource<'a, 'b, T>
-// where
-//     T: SourceError,
-// {
-//     source_error: &'a T,
-//     source: &'b str,
-// }
-// 
-// impl<'a, 'b, T> Display for SourceErrorWithSource<'a, 'b, T>
-// where
-//     T: SourceError,
-// {
-//     fn fmt(&self, f: &mut Formatter) -> Result {
-//         let span @ Span { start, end, line } = self.source_error.get_span();
-//         let length = span.len();
-//         let line_start = self.source[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-//         let line_end = self.source[end..].find('\n').map(|i| i + end).unwrap_or(self.source.len());
-//         let line_str = &self.source[line_start..line_end];
-//         let column = start - line_start;
-// 
-//         let prefix = format!("line {}:", line + 1);
-//         writeln!(f, "{} {}", prefix, line_str)?;
-//         write!(f, "{}", " ".repeat(column + prefix.len() + 1))?;
-//         writeln!(f, "{}", "^".repeat(length))?;
-//         writeln!(f, "{}", self.source_error)?;
-//         Ok(())
-//     }
-// }
-// 
-// impl<'a, 'b, T> Debug for SourceErrorWithSource<'a, 'b, T>
-// where
-//     T: SourceError,
-// {
-//     fn fmt(&self, f: &mut Formatter) -> Result {
-//         Display::fmt(self, f)
-//     }
-// }
 
 /// A value `T` which is located at a specific region in the source code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -102,7 +28,7 @@ impl<T> Located<T> {
 
 
 /// A part of the source code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Region(pub Position, pub Position);
 
 impl Region {
@@ -113,10 +39,43 @@ impl Region {
             Position::max(self.1, other.1),
         )
     }
+
+    pub fn show_region<W: Write>(&self, source: &str, mut f: W) -> Result<()> {
+        assert!(self.1.line >= self.0.line);
+
+        // Get the lines where the error occoured.
+        let n_lines = self.1.line - self.0.line + 1;
+        let lines: Vec<&str> = source
+            .lines()
+            .skip(self.0.line as _)
+            .take(n_lines as _)
+            .collect();
+
+        // Printing is handled entirely differently for single line errors
+        // and multiline errors.
+        match &lines[..] {
+            [] => unreachable!(), // because of the + 1
+            [line] => {
+                let prefix = format!("{} |    ", self.0.line + 1);
+                let n_columns = self.1.column - self.0.column + 1;
+                let start = self.0.column as usize + prefix.len() + 1;
+                writeln!(f, "{} {}", prefix, line)?;
+                write!(f, "{}", " ".repeat(start))?;
+                writeln!(f, "{}", "^".repeat(n_columns as _))?;
+            }
+            lines => {
+                for (i, line) in lines.iter().enumerate() {
+                    writeln!(f, "{} |>    {}", self.0.line as usize + 1 + i, line)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// A position in the source code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Position {
     pub line: u16,
     pub column: u16,
@@ -133,3 +92,4 @@ impl Ord for Position {
         self.line.cmp(&other.line).then(self.column.cmp(&other.column))
     }
 }
+
