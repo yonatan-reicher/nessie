@@ -1,11 +1,25 @@
-use std::io::{Write, Result};
 use std::fmt::Debug;
+use std::io::{Result, Write};
 
 /// A value `T` which is located at a specific region in the source code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Located<T> {
     pub region: Region,
     pub value: T,
+}
+
+impl<T> std::ops::Deref for Located<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for Located<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
 }
 
 impl<T> Located<T> {
@@ -18,20 +32,24 @@ impl<T> Located<T> {
     }
 
     pub fn as_ref(&self) -> Located<&T> {
-        self.map(|x| &x)
+        Located { region: self.region, value: &self.value }
     }
 
     pub fn as_mut(&mut self) -> Located<&mut T> {
-        self.map(|x| &mut x)
+        Located { region: self.region, value: &mut self.value }
     }
 }
 
-
-/// A part of the source code.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+/// A part of the source code. The first position is the start (inclusive),
+/// and the second is the end (exclusive).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Region(pub Position, pub Position);
 
 impl Region {
+    pub fn point(position: Position) -> Self {
+        Region(position, position)
+    }
+
     /// Creates a region as big as the space of two given regions.
     pub fn merge(&self, other: &Region) -> Region {
         Region(
@@ -74,10 +92,13 @@ impl Region {
     }
 }
 
+/// A line number in the source code. First line is represented by 0.
+pub type Line = u16;
+
 /// A position in the source code.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Position {
-    pub line: u16,
+    pub line: Line,
     pub column: u16,
 }
 
@@ -89,7 +110,8 @@ impl PartialOrd for Position {
 
 impl Ord for Position {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.line.cmp(&other.line).then(self.column.cmp(&other.column))
+        self.line
+            .cmp(&other.line)
+            .then(self.column.cmp(&other.column))
     }
 }
-

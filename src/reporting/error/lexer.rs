@@ -1,3 +1,5 @@
+use crate::reporting::annotation::Located;
+use crate::reporting::report::Report;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -12,5 +14,26 @@ pub enum Error {
     InvalidUnicodeEscapeSequence,
 }
 
-impl From<Error> for Report {
+impl From<Located<Error>> for Report {
+    fn from(error: Located<Error>) -> Report {
+        match *error {
+            Error::InvalidCharacter(c) => Report {
+                message: "I found an invalid character while reading the code:",
+                region: error.region,
+                notes: vec![format!("Found an invalid character {c}")],
+                suggestion: todo!(),
+            },
+            Error::UnterminatedString => Report {
+                message: "I found a string that was never ended:",
+                region: error.region,
+                notes: vec![format!("Found an `'` or an `\"` that did not have pair to end it")],
+                suggestion: vec![
+                    format!("Make sure that a string should start there"),
+                    format!("Add a matching `'` or `\"` to end the string"),
+                ],
+            },
+            Error::InvalidEscapeSequence => todo!(),
+            Error::InvalidUnicodeEscapeSequence => todo!(),
+        }
+    }
 }

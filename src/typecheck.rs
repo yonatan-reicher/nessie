@@ -3,8 +3,7 @@
 
 use crate::ast::*;
 use crate::r#type::{Type, TypeKind};
-use crate::source_error::Spanned;
-use crate::token::Span;
+use crate::reporting::annotation::{Located, Region};
 use std::collections::HashMap;
 use std::rc::Rc;
 use thiserror::Error;
@@ -13,8 +12,6 @@ use vec1::*;
 type EKind = ExprKind;
 
 type TKind = TypeKind;
-
-type TEKind = TypeExprKind;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Error {
@@ -32,7 +29,7 @@ pub enum Error {
 
 #[derive(Debug, Clone)]
 pub struct Env {
-    errors: Vec<Spanned<Error>>,
+    errors: Vec<Located<Error>>,
     locals: HashMap<Rc<str>, Vec1<Local>>,
     type_locals: HashMap<Rc<str>, Type>,
 }
@@ -108,30 +105,33 @@ impl Env {
         }
     }
 
-    fn report_error(&mut self, span: Span, error: Error) {
-        self.errors.push(Spanned::new(span, error));
+    fn report_error(&mut self, region: Region, error: Error) {
+        self.errors.push(Located {
+            region,
+            value: error,
+        });
     }
 
-    pub fn eval_type_expr(&mut self, expr: &TypeExpr) -> Result<Type, ()> {
-        match &expr.kind {
-            TEKind::Var(name) => {
+    pub fn eval_type_expr(&mut self, expr: &Located<TypeExpr>) -> Result<Type, ()> {
+        match &expr.value {
+            TypeExpr::Var(name) => {
                 if let Some(ty) = self.type_locals.get(name) {
                     Ok(ty.clone())
                 } else {
-                    self.report_error(expr.span, Error::UndefinedVariable(name.clone()));
+                    self.report_error(expr.region, Error::UndefinedVariable(name.clone()));
                     Err(())
                 }
             }
-            TEKind::Function(left, right) => {
+            TypeExpr::Function(left, right) => {
                 let left = self.eval_type_expr(left);
                 let right = self.eval_type_expr(right);
                 Ok(Type::function(Rc::new(left?), Rc::new(right?)))
             }
-            TEKind::Paren(expr) => self.eval_type_expr(expr),
+            TypeExpr::Paren(expr) => self.eval_type_expr(expr),
         }
     }
 
-    pub fn typecheck(&mut self, program: &mut Program) -> Result<(), Vec<Spanned<Error>>> {
+    pub fn typecheck(&mut self, program: &mut Program) -> Result<(), Vec<Located<Error>>> {
         let _ = self.visit(&mut program.body);
 
         if program.body.ty.is_none() {

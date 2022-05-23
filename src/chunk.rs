@@ -1,6 +1,6 @@
 //! Contains byte code instructions and chunk types.
 
-use crate::token::Line;
+use crate::reporting::annotation::Line;
 use crate::value::Value;
 use crate::vm::VM;
 use crate::r#type::Type;
@@ -83,13 +83,13 @@ impl Display for Instruction {
 
 #[derive(Debug, Default)]
 pub struct Chunk {
-    /// Optional name for the chunk - for debuging nessie code.
+    /// Optional name for the chunk - for debugging Nessie code.
     name: Option<String>,
     /// The set of constant values contained in the chunk.
     constants: Vec<Value>,
     /// The code for dropping the constants - called with an arbitrary value
     /// at the top of the stack and all the constants below it.
-    /// For now, this is not `Instructions` because we don't need debuging
+    /// For now, this is not `Instructions` because we don't need debugging
     /// info.
     constants_drop: Vec<Instruction>,
     /// The instructions of the chunk.

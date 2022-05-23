@@ -1,3 +1,4 @@
+use crate::reporting::annotation::Line;
 use crate::ast::*;
 use crate::chunk::{Chunk, Instruction};
 use crate::r#type::prelude::*;
@@ -114,7 +115,7 @@ impl Compiler {
         self.chunk_mut().instructions_mut()[offset] = instruction;
     }
 
-    fn emit_stack_get(&mut self, ty: &Type, offset: usize, line: usize) {
+    fn emit_stack_get(&mut self, ty: &Type, offset: usize, line: Line) {
         // TODO: respond if offset is bigger u16
         let offset = offset as u16;
         let instruction = match ty.category() {
@@ -125,7 +126,7 @@ impl Compiler {
         self.frame_mut().offset += 1;
     }
 
-    fn emit_stack_drop_above(&mut self, ty: &Type, line: usize) {
+    fn emit_stack_drop_above(&mut self, ty: &Type, line: Line) {
         for &inst in ty.drop_above() {
             self.chunk_mut().write(inst, line);
         }
@@ -184,26 +185,26 @@ impl Compiler {
                     self.chunk_mut().write_constant(Value::new_int(int), &Type::INT)
                 };
                 self.chunk_mut()
-                    .write(I::PrimitiveConstant(constant), expr.span.line);
+                    .write(I::PrimitiveConstant(constant), expr.span.0.line);
             }
             EKind::True => {
-                self.chunk_mut().write(I::True, expr.span.line);
+                self.chunk_mut().write(I::True, expr.span.0.line);
             }
             EKind::False => {
-                self.chunk_mut().write(I::False, expr.span.line);
+                self.chunk_mut().write(I::False, expr.span.0.line);
             }
             EKind::String(string) => {
                 let constant = unsafe { 
                     self.chunk_mut().write_constant(Value::new_string(string), &Type::STRING)
                 };
                 self.chunk_mut()
-                    .write(I::PtrConstant(constant), expr.span.line);
+                    .write(I::PtrConstant(constant), expr.span.0.line);
             },
             EKind::Paren(e) => self.emit_expr(&e),
             EKind::Unary(op, e) => {
                 self.emit_expr(&e);
                 self.chunk_mut()
-                    .write(unary_op_instruction(*op), expr.span.line);
+                    .write(unary_op_instruction(*op), expr.span.0.line);
             }
             EKind::Binary(op, l, r) => {
                 // Write the two operands to the stack
@@ -211,7 +212,7 @@ impl Compiler {
                 self.emit_expr(&r);
                 self.chunk_mut().write(
                     binary_op_instruction(*op, l.ty.as_ref().unwrap()),
-                    expr.span.line,
+                    expr.span.0.line,
                 );
                 // After the binary operation, the stack has been reduced by one
                 self.frame_mut().offset -= 1;
@@ -228,23 +229,23 @@ impl Compiler {
                 self.emit_expr(&binding);
                 // Then return the body
                 self.emit_expr(&e);
-                self.emit_stack_drop_above(binding.ty.as_ref().unwrap(), binding.span.line);
+                self.emit_stack_drop_above(binding.ty.as_ref().unwrap(), binding.span.0.line);
             }
             EKind::Var(_, unique_name) => {
                 let offset = self.frame().locals[unique_name.as_ref().unwrap()];
-                self.emit_stack_get(expr.ty.as_ref().unwrap(), offset, expr.span.line);
+                self.emit_stack_get(expr.ty.as_ref().unwrap(), offset, expr.span.0.line);
             }
             EKind::If { cond, then, else_ } => {
                 // First - write the condition
                 self.emit_expr(&cond);
                 let cond_jmp_offset = self.chunk_offset();
                 // This will be backpatched later
-                self.chunk_mut().write(I::JumpIfFalse(0), expr.span.line);
+                self.chunk_mut().write(I::JumpIfFalse(0), expr.span.0.line);
                 // Second - write the then branch
                 let then_start_offset = self.chunk_offset();
                 self.emit_expr(&then);
                 let then_jmp_offset = self.chunk_offset();
-                self.chunk_mut().write(I::Jump(0), expr.span.line);
+                self.chunk_mut().write(I::Jump(0), expr.span.0.line);
                 // The then branch is finished, so we can now write the
                 // offset of the condition's jump
                 let then_len = self.chunk_offset() - then_start_offset;
@@ -300,17 +301,17 @@ impl Compiler {
                 self.emit_expr(&body);
                 // Drop the captured variables and the parameter
                 for _ in captured_variables.iter().rev() {
-                    // self.emit_stack_drop_above(ty, expr.span.line);
+                    // self.emit_stack_drop_above(ty, expr.span.0.line);
                     // hack: we want to clear the stack without dropping the
                     // values (because they are owned by the closure and have
                     // are weakly referenced on the stack). We use a primitive
                     // drop for this.
-                    self.chunk_mut().write(I::PrimitiveDropAbove, expr.span.line);
+                    self.chunk_mut().write(I::PrimitiveDropAbove, expr.span.0.line);
                 }
                 // Drop the recursion variable.
-                self.emit_stack_drop_above(expr.ty.as_ref().unwrap(), expr.span.line);
+                self.emit_stack_drop_above(expr.ty.as_ref().unwrap(), expr.span.0.line);
                 // Drop the argument.
-                self.emit_stack_drop_above(arg_type.as_ref().unwrap(), body.span.line);
+                self.emit_stack_drop_above(arg_type.as_ref().unwrap(), body.span.0.line);
 
                 // Get the compiled chunk
                 let chunk = self.frames.pop().unwrap().chunk;
@@ -322,12 +323,12 @@ impl Compiler {
                         self.chunk_mut().write_constant(value, &expr.ty.as_ref().unwrap())
                     };
                     self.chunk_mut()
-                        .write(I::PtrConstant(constant), expr.span.line);
+                        .write(I::PtrConstant(constant), expr.span.0.line);
                 } else {
                     // first, load the captured variables in order
                     for (name, ty) in &captured_variables {
                         let offset = self.frame().locals[name];
-                        self.emit_stack_get(ty, offset, expr.span.line);
+                        self.emit_stack_get(ty, offset, expr.span.0.line);
                     }
                     // then, load the function
                     let value = unsafe {
@@ -340,10 +341,10 @@ impl Compiler {
                         self.chunk_mut().write_constant(value, &Type::CLOSURE_SOURCE)
                     };
                     self.chunk_mut()
-                        .write(I::PtrConstant(constant), expr.span.line);
+                        .write(I::PtrConstant(constant), expr.span.0.line);
                     // Finally, produce the closure
                     self.chunk_mut()
-                        .write(I::Closure(captured_variables.len() as u16), expr.span.line);
+                        .write(I::Closure(captured_variables.len() as u16), expr.span.0.line);
                 }
             }
             EKind::App { func, arg } => {
@@ -352,7 +353,7 @@ impl Compiler {
                 // First - write the function
                 self.emit_expr(&func);
                 // Then - call the function
-                self.chunk_mut().write(I::Call, expr.span.line);
+                self.chunk_mut().write(I::Call, expr.span.0.line);
             }
         }
         *self.offset_mut() = frame_offset + 1;

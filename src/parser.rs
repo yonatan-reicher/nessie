@@ -1,17 +1,16 @@
 //! This module contains the parser for the language.
 
-use crate::reporting::annotation::Located;
 use crate::ast::*;
+use crate::reporting::annotation::{Located, Region};
 use crate::token::prelude::*;
-use crate::source_error::Spanned;
 use std::rc::Rc;
 use thiserror::Error;
 
 type EKind = ExprKind;
 
-type TEKind = TypeExprKind;
+type L<T> = Located<T>;
 
-pub fn parse<'a>(tokens: &'a [Token]) -> Result<Program, Vec<Spanned<Error>>> {
+pub fn parse<'a>(tokens: &'a [L<Token>]) -> Result<Program, Vec<L<Error>>> {
     let mut parser = Parser::new(tokens);
 
     match parser.program() {
@@ -33,7 +32,7 @@ pub enum Error {
     #[error("expected an identifier")]
     ExpectedIdentifier,
     #[error("expected a {0}")]
-    ExpectedToken(TokenKind),
+    ExpectedToken(Token),
     #[error("empty program")]
     EmptyCode,
     #[error("expected a type expression")]
@@ -42,17 +41,15 @@ pub enum Error {
     UnaryOperatorMissingOperand,
 }
 
-type TKind = TokenKind;
-
 #[derive(Debug)]
 struct Parser<'a> {
-    tokens: &'a [Token],
+    tokens: &'a [L<Token>],
     index: usize,
-    errors: Vec<Spanned<Error>>,
+    errors: Vec<L<Error>>,
 }
 
-fn try_kind(token: Option<&Token>) -> Option<&TokenKind> {
-    token.map(|t| &t.kind)
+fn try_kind(token: Option<&L<Token>>) -> Option<&Token> {
+    token.map(|t| &t.value)
 }
 
 /// Note: the meaning of precedence is not consistent. In this project, highest
@@ -96,9 +93,9 @@ impl Precedence {
 
 fn get_unary_operator(token: &Token) -> Option<UnaryOp> {
     type U = UnaryOp;
-    match &token.kind {
-        TKind::Minus => Some(U::Neg),
-        TKind::Not => Some(U::Not),
+    match token {
+        Token::Minus => Some(U::Neg),
+        Token::Not => Some(U::Not),
         _ => None,
     }
 }
@@ -106,28 +103,28 @@ fn get_unary_operator(token: &Token) -> Option<UnaryOp> {
 fn get_binary_operator(token: &Token) -> Option<(Precedence, BinaryOp)> {
     type B = BinaryOp;
     type P = Precedence;
-    match &token.kind {
-        TKind::Plus => Some((P::Term, B::Add)),
-        TKind::Minus => Some((P::Term, B::Sub)),
-        TKind::Star => Some((P::Factor, B::Mul)),
-        TKind::Slash => Some((P::Factor, B::Div)),
-        TKind::Percent => Some((P::Factor, B::Mod)),
-        TKind::And => Some((P::And, B::And)),
-        TKind::Or => Some((P::Or, B::Or)),
-        TKind::Xor => Some((P::Xor, B::Xor)),
-        TKind::EqualEqual => Some((P::Equality, B::Eq)),
-        TKind::BangEqual => Some((P::Equality, B::Ne)),
-        TKind::Lesser => Some((P::Comparison, B::Lt)),
-        TKind::Greater => Some((P::Comparison, B::Gt)),
-        TKind::LesserEqual => Some((P::Comparison, B::Le)),
-        TKind::GreaterEqual => Some((P::Comparison, B::Ge)),
-        TKind::PlusPlus => Some((P::Term, B::Concat)),
+    match &token {
+        Token::Plus => Some((P::Term, B::Add)),
+        Token::Minus => Some((P::Term, B::Sub)),
+        Token::Star => Some((P::Factor, B::Mul)),
+        Token::Slash => Some((P::Factor, B::Div)),
+        Token::Percent => Some((P::Factor, B::Mod)),
+        Token::And => Some((P::And, B::And)),
+        Token::Or => Some((P::Or, B::Or)),
+        Token::Xor => Some((P::Xor, B::Xor)),
+        Token::EqualEqual => Some((P::Equality, B::Eq)),
+        Token::BangEqual => Some((P::Equality, B::Ne)),
+        Token::Lesser => Some((P::Comparison, B::Lt)),
+        Token::Greater => Some((P::Comparison, B::Gt)),
+        Token::LesserEqual => Some((P::Comparison, B::Le)),
+        Token::GreaterEqual => Some((P::Comparison, B::Ge)),
+        Token::PlusPlus => Some((P::Term, B::Concat)),
         _ => None,
     }
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a [Token]) -> Self {
+    pub fn new(tokens: &'a [L<Token>]) -> Self {
         Self {
             tokens,
             index: 0,
@@ -139,91 +136,80 @@ impl<'a> Parser<'a> {
         self.index < self.tokens.len()
     }
 
-    fn span_from_token_indices(&self, start: usize, end: usize) -> Span {
+    /// Get a range from a (inclusive) start and an (inclusive) range.
+    fn region_from_index_range(&self, start: usize, end: usize) -> Region {
         // Edge case - no tokens at all
         if self.tokens.is_empty() {
-            return Span::empty(0, 0);
+            return Region::default();
         }
 
         let max_index = self.tokens.len() - 1;
         let start = start.clamp(0, max_index);
-        let end = end.clamp(0, max_index);
-        let Span { start, line, .. } = self.tokens[start].span;
-        let Span { end, .. } = self.tokens[end].span;
-        Span { start, end, line }
+        let end = end.clamp(start, max_index);
+        let start_region = self.tokens[start].region;
+        let end_region = self.tokens[end].region;
+        start_region.merge(&end_region)
     }
 
-    fn report_error(&mut self, error: Error, start: usize) {
-        let span = self.span_from_token_indices(start, self.index);
-        self.errors.push(Spanned::new(span, error));
+    fn report_error(&mut self, start: usize, error: Error) {
+        let region = self.region_from_index_range(start, self.index - 1);
+        self.errors.push(L {
+            region,
+            value: error,
+        });
     }
 
     fn report_error_here(&mut self, error: Error) {
-        self.report_error(error, self.index)
+        self.report_error(self.index, error)
     }
 
-    fn make_expr_at(&self, start_index: usize, end_index: usize, kind: ExprKind) -> Expr {
-        let span = self.span_from_token_indices(start_index, end_index - 1);
-        Expr {
-            span,
-            kind,
-            ty: None,
-        }
+    fn located_at_indicies<T>(&self, start_index: usize, end_index: usize, value: T) -> L<T> {
+        let region = self.region_from_index_range(start_index, end_index - 1);
+        L { region, value }
     }
 
-    fn make_expr(&self, start_index: usize, kind: ExprKind) -> Expr {
-        self.make_expr_at(start_index, self.index, kind)
-    }
-
-    fn make_type_expr_at(
-        &self,
-        start_index: usize,
-        end_index: usize,
-        kind: TypeExprKind,
-    ) -> TypeExpr {
-        let span = self.span_from_token_indices(start_index, end_index - 1);
-        TypeExpr { span, kind }
-    }
-
-    fn make_type_expr(&self, start_index: usize, kind: TypeExprKind) -> TypeExpr {
-        self.make_type_expr_at(start_index, self.index, kind)
+    fn located<T>(&self, start_index: usize, value: T) -> L<T> {
+        self.located_at_indicies(start_index, self.index, value)
     }
 
     fn parse_atom(&mut self) -> Result<Option<Expr>, ()> {
         let start = self.index;
         match try_kind(self.tokens.get(self.index)) {
-            Some(&TokenKind::IntLiteral(i)) => {
+            Some(&Token::IntLiteral(i)) => {
                 self.index += 1;
-                Ok(Some(self.make_expr(start, ExprKind::Int(i))))
+                Ok(Some(self.located(start, ExprKind::Int(i)).into()))
             }
-            Some(TokenKind::String(s)) => {
-                self.index += 1;
-                Ok(Some(self.make_expr(start, ExprKind::String(s.clone()))))
-            }
-            Some(TokenKind::True) => {
-                self.index += 1;
-                Ok(Some(self.make_expr(start, ExprKind::True)))
-            }
-            Some(TokenKind::False) => {
-                self.index += 1;
-                Ok(Some(self.make_expr(start, ExprKind::False)))
-            }
-            Some(TokenKind::Identifier(name)) => {
+            Some(Token::String(s)) => {
                 self.index += 1;
                 Ok(Some(
-                    self.make_expr(start, ExprKind::Var(name.clone(), None)),
+                    self.located(start, ExprKind::String(s.clone())).into(),
                 ))
             }
-            Some(&TokenKind::LeftParen) => {
+            Some(Token::True) => {
+                self.index += 1;
+                Ok(Some(self.located(start, ExprKind::True).into()))
+            }
+            Some(Token::False) => {
+                self.index += 1;
+                Ok(Some(self.located(start, ExprKind::False).into()))
+            }
+            Some(Token::Identifier(name)) => {
+                self.index += 1;
+                Ok(Some(
+                    self.located(start, ExprKind::Var(name.clone(), None))
+                        .into(),
+                ))
+            }
+            Some(&Token::LeftParen) => {
                 self.index += 1;
                 let expr = self.expr();
-                if try_kind(self.tokens.get(self.index)) != Some(&TokenKind::RightParen) {
+                if try_kind(self.tokens.get(self.index)) != Some(&Token::RightParen) {
                     self.report_error_here(Error::UnclosedDelimiter);
                 }
                 self.index += 1;
                 expr.map(|expr| {
                     let kind = ExprKind::Paren(Box::new(expr));
-                    Some(self.make_expr(start, kind))
+                    Some(self.located(start, kind).into())
                 })
             }
             _ => Ok(None),
@@ -233,7 +219,7 @@ impl<'a> Parser<'a> {
     fn application_exprs(&mut self) -> Result<Option<Expr>, ()> {
         let start = self.index;
         // Collect the atoms
-        let mut atoms = Some(Vec::new());
+        let mut atoms: Option<Vec<(Expr, usize)>> = Some(Vec::new());
         loop {
             match self.parse_atom() {
                 Ok(Some(atom)) => {
@@ -260,21 +246,24 @@ impl<'a> Parser<'a> {
                     func: Box::new(left),
                     arg: Box::new(right),
                 };
-                (self.make_expr_at(start, right_index, kind), right_index)
+                (
+                    self.located_at_indicies(start, right_index, kind).into(),
+                    right_index,
+                )
             })
             .map(|(expr, _)| expr))
     }
 
     fn unary_expr(&mut self) -> Result<Option<Expr>, ()> {
         let start = self.index;
-        if let Some(op) = self.tokens.get(self.index).and_then(get_unary_operator) {
+        if let Some(op) = try_kind(self.tokens.get(self.index)).and_then(get_unary_operator) {
             self.index += 1;
             self.parse_atom().and_then(|atom| {
                 if let Some(atom) = atom {
                     let kind = EKind::Unary(op, Box::new(atom));
-                    Ok(Some(self.make_expr(start, kind)))
+                    Ok(Some(self.located(start, kind).into()))
                 } else {
-                    self.report_error(Error::UnaryOperatorMissingOperand, start);
+                    self.report_error(start, Error::UnaryOperatorMissingOperand);
                     Err(())
                 }
             })
@@ -301,7 +290,7 @@ impl<'a> Parser<'a> {
         let mut ret = self.parse_precedence(next_precedence)?;
 
         while let Some(token) = self.tokens.get(self.index) {
-            let (precedence, op) = match get_binary_operator(token) {
+            let (precedence, op) = match get_binary_operator(&token.value) {
                 Some((precedence, op)) => (precedence, op),
                 None => break,
             };
@@ -313,13 +302,13 @@ impl<'a> Parser<'a> {
             // for now only allow left associativity
             let right = self.parse_precedence(precedence.next())?;
             let kind = ExprKind::Binary(op, Box::new(ret), Box::new(right));
-            ret = self.make_expr(start, kind);
+            ret = self.located(start, kind).into();
         }
 
         Ok(ret)
     }
 
-    fn token_kind_eq(&mut self, kind: TokenKind) -> Result<(), ()> {
+    fn token_kind_eq(&mut self, kind: Token) -> Result<(), ()> {
         if try_kind(self.tokens.get(self.index)) == Some(&kind) {
             self.index += 1;
             Ok(())
@@ -330,10 +319,11 @@ impl<'a> Parser<'a> {
     }
 
     fn identifier(&mut self) -> Result<Rc<str>, ()> {
-        if let Some(TKind::Identifier(name)) = try_kind(self.tokens.get(self.index)) {
+        if let Some(Token::Identifier(name)) = try_kind(self.tokens.get(self.index)) {
             self.index += 1;
             Ok(name.clone())
         } else {
+            self.index += 1;
             self.report_error_here(Error::ExpectedIdentifier);
             Err(())
         }
@@ -341,74 +331,78 @@ impl<'a> Parser<'a> {
 
     fn let_expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
-        let _ = self.token_kind_eq(TKind::Let);
+        let _ = self.token_kind_eq(Token::Let);
         let name = self.identifier();
-        let _ = self.token_kind_eq(TKind::Equal);
+        let _ = self.token_kind_eq(Token::Equal);
         let binding = self.expr();
-        let _ = self.token_kind_eq(TKind::In);
+        let _ = self.token_kind_eq(Token::In);
         let body = self.expr();
 
-        Ok(self.make_expr(
-            start,
-            ExprKind::Let {
-                name: name?,
-                unique_name: None,
-                binding: Box::new(binding?),
-                expr: Box::new(body?),
-            },
-        ))
+        Ok(self
+            .located(
+                start,
+                ExprKind::Let {
+                    name: name?,
+                    unique_name: None,
+                    binding: Box::new(binding?),
+                    expr: Box::new(body?),
+                },
+            )
+            .into())
     }
 
     fn if_expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
-        let _ = self.token_kind_eq(TKind::If);
+        let _ = self.token_kind_eq(Token::If);
         let cond = self.expr();
-        let _ = self.token_kind_eq(TKind::Then);
+        let _ = self.token_kind_eq(Token::Then);
         let then = self.expr();
-        let _ = self.token_kind_eq(TKind::Else);
+        let _ = self.token_kind_eq(Token::Else);
         let else_ = self.expr();
 
-        Ok(self.make_expr(
-            start,
-            ExprKind::If {
-                cond: Box::new(cond?),
-                then: Box::new(then?),
-                else_: Box::new(else_?),
-            },
-        ))
+        Ok(self
+            .located(
+                start,
+                ExprKind::If {
+                    cond: Box::new(cond?),
+                    then: Box::new(then?),
+                    else_: Box::new(else_?),
+                },
+            )
+            .into())
     }
 
-    fn type_expr_atom(&mut self) -> Result<TypeExpr, ()> {
+    fn type_expr_atom(&mut self) -> Result<Located<TypeExpr>, ()> {
         let start = self.index;
-        if let Some(TKind::LeftParen) = try_kind(self.tokens.get(self.index)) {
+        if let Some(Token::LeftParen) = try_kind(self.tokens.get(self.index)) {
             self.index += 1;
             let expr = self.type_expr();
-            self.token_kind_eq(TKind::RightParen)?;
-            return Ok(self.make_type_expr(start, TEKind::Paren(Box::new(expr?))));
+            self.token_kind_eq(Token::RightParen)?;
+            return Ok(self.located(start, TypeExpr::Paren(Box::new(expr?))));
         }
         let identifier = self.identifier();
-        Ok(self.make_type_expr(start, TypeExprKind::Var(identifier?)))
+        Ok(self.located(start, TypeExpr::Var(identifier?)))
     }
 
-    fn function_type_expr(&mut self) -> Result<TypeExpr, ()> {
+    fn function_type_expr(&mut self) -> Result<Located<TypeExpr>, ()> {
         let start = self.index;
         let atom = self.type_expr_atom();
         match try_kind(self.tokens.get(self.index)) {
-            Some(TokenKind::Arrow) => {
+            Some(Token::Arrow) => {
                 self.index += 1;
                 let type_expr = self.type_expr();
-                let kind = TEKind::Function(Box::new(atom?), Box::new(type_expr?));
-                Ok(self.make_type_expr(start, kind))
+                let kind = TypeExpr::Function(Box::new(atom?), Box::new(type_expr?));
+                Ok(self.located(start, kind).into())
             }
             _ => Ok(atom?),
         }
     }
 
-    fn type_expr(&mut self) -> Result<TypeExpr, ()> {
+    fn type_expr(&mut self) -> Result<Located<TypeExpr>, ()> {
         let start = self.index;
         let res = self.function_type_expr();
         if res.is_err() {
-            self.report_error(Error::ExpectedTypeExpr, start);
+            self.report_error(start, Error::ExpectedTypeExpr);
             return Err(());
         }
         res
@@ -419,23 +413,26 @@ impl<'a> Parser<'a> {
         let errors = self.errors.len();
         let arg_name = self.identifier();
         let arg_type_expr = {
-            if try_kind(self.tokens.get(self.index)) == Some(&TKind::Colon) {
+            if try_kind(self.tokens.get(self.index)) == Some(&Token::Colon) {
                 self.index += 1;
                 self.type_expr().map(Some)
             } else {
                 Ok(None)
             }
         };
-        if self.token_kind_eq(TKind::FatArrow).is_ok() {
+        if self.token_kind_eq(Token::FatArrow).is_ok() {
             let body = self.expr();
-            Ok(Some(self.make_expr(
-                start,
-                ExprKind::Function {
-                    arg: NameDeclaration::new(arg_name?, arg_type_expr?),
-                    recursion_var: None,
-                    body: Box::new(body?),
-                },
-            )))
+            Ok(Some(
+                self.located(
+                    start,
+                    ExprKind::Function {
+                        arg: NameDeclaration::new(arg_name?, arg_type_expr?),
+                        recursion_var: None,
+                        body: Box::new(body?),
+                    },
+                )
+                .into(),
+            ))
         } else {
             // rollback
             self.index = start;
@@ -447,8 +444,8 @@ impl<'a> Parser<'a> {
     fn expr(&mut self) -> Result<Expr, ()> {
         let start = self.index;
         let res = match try_kind(self.tokens.get(self.index)) {
-            Some(TKind::Let) => self.let_expr(),
-            Some(TKind::If) => self.if_expr(),
+            Some(Token::Let) => self.let_expr(),
+            Some(Token::If) => self.if_expr(),
             _ => self.function_expr().and_then(|function_expr| {
                 if let Some(function_expr) = function_expr {
                     Ok(function_expr)
@@ -458,7 +455,7 @@ impl<'a> Parser<'a> {
             }),
         };
         if res.is_err() {
-            self.report_error(Error::ExpectedExpression, start);
+            self.report_error(start, Error::ExpectedExpression);
         }
         res
     }
@@ -466,6 +463,7 @@ impl<'a> Parser<'a> {
     pub fn program(&mut self) -> Result<Program, ()> {
         // Edge case - empty file
         if self.tokens.is_empty() {
+            self.index += 1;
             self.report_error_here(Error::EmptyCode);
             return Err(());
         }
@@ -482,7 +480,7 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::*;
     use crate::lexer::lex;
-    use crate::token::Span;
+    use crate::reporting::annotation::Position;
 
     #[test]
     fn int() {
@@ -491,11 +489,10 @@ mod tests {
         assert_eq!(
             program.body,
             Expr {
-                span: Span {
-                    start: 0,
-                    end: 3,
-                    line: 0,
-                },
+                span: Region(
+                    Position { line: 0, column: 0 },
+                    Position { line: 0, column: 3 }
+                ),
                 kind: ExprKind::Int(123),
                 ty: None,
             }
@@ -509,28 +506,25 @@ mod tests {
         assert_eq!(
             program.body,
             Expr {
-                span: Span {
-                    start: 0,
-                    end: 5,
-                    line: 0,
-                },
+                span: Region(
+                    Position { line: 0, column: 0 },
+                    Position { line: 0, column: 5 }
+                ),
                 kind: ExprKind::Binary(
                     BinaryOp::Add,
                     Box::new(Expr {
-                        span: Span {
-                            start: 0,
-                            end: 1,
-                            line: 0,
-                        },
+                        span: Region(
+                            Position { line: 0, column: 0 },
+                            Position { line: 0, column: 1 },
+                        ),
                         kind: ExprKind::Int(1),
                         ty: None,
                     }),
                     Box::new(Expr {
-                        span: Span {
-                            start: 4,
-                            end: 5,
-                            line: 0,
-                        },
+                        span: Region(
+                            Position { line: 0, column: 4 },
+                            Position { line: 0, column: 5 },
+                        ),
                         kind: ExprKind::Int(2),
                         ty: None,
                     }),

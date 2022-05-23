@@ -1,10 +1,10 @@
-//! The `Engine` is the main way to embed and interact with nessie programs.
+//! The `Engine` is the main way to embed and interact with Nessie programs.
 //!
 //! # Examples
 //! ```
 //! use nessie::Engine;
 
-// datatypes
+// data types
 use crate::ast::prelude::*;
 use crate::chunk::prelude::*;
 use crate::r#type::prelude::*;
@@ -14,12 +14,16 @@ use crate::value::prelude::*;
 use crate::codegen;
 use crate::lexer;
 use crate::parser;
-use crate::source_error;
 use crate::typecheck;
 use crate::vm;
 
+// Errors and reporting.
+use crate::reporting::annotation::Located;
+use crate::reporting::error::lexer::Error as LexError;
+use parser::Error as ParseError;
+use typecheck::Error as TypeError;
+
 // other
-use source_error::Spanned;
 use std::io::{self, Write};
 use std::rc::Rc;
 use std::result;
@@ -38,18 +42,18 @@ pub struct Error {
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
     #[error("lexing error")]
-    Lex(#[source] Spanned<lexer::Error>),
+    Lex(#[source] Located<LexError>),
     #[error("parsing errors")]
-    Parse(Vec<Spanned<parser::Error>>),
-    #[error("typechecking errors")]
-    Typecheck(Vec<Spanned<typecheck::Error>>),
+    Parse(Vec<Located<ParseError>>),
+    #[error("type checking errors")]
+    Typecheck(Vec<Located<TypeError>>),
 }
 
 pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Debug, Default)]
 pub struct Engine {
-    /// The typechecking context.
+    /// The type checking context.
     env: typecheck::Env,
     /// The code generation context.
     compiler: codegen::Compiler,
