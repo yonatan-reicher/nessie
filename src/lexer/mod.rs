@@ -264,6 +264,23 @@ impl<'source> Lexer<'source> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
+
+    fn l<T>(line1: Line, column1: u16, line2: Line, column2: u16, value: T) -> Located<T> {
+        Located {
+            region: Region(
+                Position {
+                    line: line1,
+                    column: column1,
+                },
+                Position {
+                    line: line2,
+                    column: column2,
+                },
+            ),
+            value,
+        }
+    }
 
     #[test]
     fn advance_int_literal() {
@@ -325,5 +342,125 @@ mod tests {
             Some("hello\"".into())
         );
         assert_eq!(lexer.advance_string_literal().unwrap(), None);
+    }
+
+    macro_rules! make_token_tests {
+        {
+            $( $name:ident $code:literal $token:expr),* $(,)?
+        } => {
+            $(
+                #[test]
+                fn $name() {
+                    assert_eq!(
+                        lex($code),
+                        Ok(vec![l(0, 0, 0, $code.len() as _, $token)]),
+                    );
+                }
+            )+
+        }
+    }
+
+    make_token_tests! {
+        let_token "let" Token::Let,
+        in_token "in" Token::In,
+        if_token "if" Token::If,
+        true_token "true" Token::True,
+        false_token "false" Token::False,
+        left_paren_token "(" Token::LeftParen,
+        right_paren_token ")" Token::RightParen,
+        left_brace_token "{" Token::LeftBrace,
+        right_brace_token "}" Token::RightBrace,
+        left_bracket_token "[" Token::LeftBracket,
+        right_bracket_token "]" Token::RightBracket,
+        comma_token "," Token::Comma,
+        semicolon_token ";" Token::Semicolon,
+        colon_token ":" Token::Colon,
+        dot_token "." Token::Dot,
+        star_token "*" Token::Star,
+        slash_token "/" Token::Slash,
+        percent_token "%" Token::Percent,
+        tilde_token "~" Token::Tilde,
+        question_token "?" Token::Question,
+        pipe_token "|" Token::Pipe,
+        caret_token "^" Token::Caret,
+        ampersand_token "&" Token::Ampersand,
+        arrow_token "->" Token::Arrow,
+        fat_arrow_token "=>" Token::FatArrow,
+        minus_token "-" Token::Minus,
+        plus_plus_token "++" Token::PlusPlus,
+        plus_token "+" Token::Plus,
+        bang_equal_token "!=" Token::BangEqual,
+        equal_equal_token "==" Token::EqualEqual,
+        bang_token "!" Token::Bang,
+        equal_token "=" Token::Equal,
+        greater_equal_token ">=" Token::GreaterEqual,
+        lesser_equal_token "<=" Token::LesserEqual,
+        greater_token ">" Token::Greater,
+        lesser_token "<" Token::Lesser,
+        int_literal_token "1294" Token::IntLiteral(1294),
+        string_literal_single_quote_token "'hello ! \" '" Token::String("hello ! \" ".into()),
+        string_literal_double_quote_token "\" Hen1$!\"" Token::String(" Hen1$!".into()),
+        identifier_token "whats-up" Token::Identifier("whats-up".into()),
+    }
+
+    #[test]
+    fn lex_calculations() {
+        let tokens = lex(indoc! {"
+            1 + 2 * (3 - 21)
+        "})
+        .expect("could not lex");
+        assert_ne!(
+            tokens,
+            vec![
+                l(0, 0, 0, 1, Token::IntLiteral(1)),
+                l(0, 2, 0, 3, Token::Plus),
+                l(0, 4, 0, 5, Token::IntLiteral(2)),
+                l(0, 6, 0, 7, Token::Star),
+                l(0, 8, 0, 9, Token::LeftParen),
+                l(0, 9, 0, 10, Token::IntLiteral(3)),
+                l(0, 11, 0, 12, Token::Minus),
+                l(0, 13, 0, 15, Token::IntLiteral(21)),
+                l(0, 15, 0, 16, Token::RightParen),
+            ],
+        )
+    }
+
+    #[test]
+    fn lex_program() {
+        let tokens = lex(indoc! {"
+            let fib = n: int =>
+                if n <= 1 then n
+                else recurse (n - 1) + recurse (n - 2)
+            in
+            fib 36 == 14930352
+        "})
+        .expect("could no lex.");
+        let expected = vec![
+            l(0, 0, 0, 3, Token::Let),
+            l(0, 4, 0, 7, Token::Identifier("fib".into())),
+            l(0, 8, 0, 9, Token::Equal),
+            l(0, 10, 0, 11, Token::Identifier("n".into())),
+            l(0, 11, 0, 12, Token::Colon),
+            l(0, 13, 0, 14, Token::Identifier("int".into())),
+            l(0, 15, 0, 17, Token::FatArrow),
+            l(1, 4, 1, 6, Token::If),
+            l(1, 7, 1, 8, Token::Identifier("n".into())),
+            l(1, 9, 1, 11, Token::LesserEqual),
+            l(1, 12, 1, 13, Token::IntLiteral(1)),
+            l(1, 14, 1, 16, Token::Then),
+            l(1, 17, 1, 18, Token::Identifier("n".into())),
+            l(2, 4, 2, 8, Token::Else),
+            l(2, 9, 2, 16, Token::Identifier("recurse".into())),
+        ];
+        assert_eq!(
+            tokens, expected,
+            indoc! {"
+                actual tokens:
+                {:#?}
+                expected tokens:
+                {:#?}
+            "},
+            tokens, expected,
+        );
     }
 }
