@@ -19,8 +19,7 @@ use crate::vm;
 
 // Errors and reporting.
 use crate::reporting::annotation::Located;
-use crate::reporting::error::lexer::Error as LexError;
-use parser::Error as ParseError;
+use crate::reporting::error::{LexError, ParseError};
 use typecheck::Error as TypeError;
 
 // other

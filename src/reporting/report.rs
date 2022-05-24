@@ -5,6 +5,7 @@ use crate::reporting::annotation::Region;
 pub struct Report {
     pub message: &'static str,
     pub region: Region,
-    pub suggestion: Vec<String>,
     pub notes: Vec<String>,
+    pub suggestion: Vec<String>,
 }
+

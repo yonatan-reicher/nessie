@@ -2,9 +2,9 @@
 
 use crate::ast::*;
 use crate::reporting::annotation::{Located, Region};
+use crate::reporting::error::parsing::Error;
 use crate::token::prelude::*;
 use std::rc::Rc;
-use thiserror::Error;
 
 type EKind = ExprKind;
 
@@ -17,28 +17,6 @@ pub fn parse<'a>(tokens: &'a [L<Token>]) -> Result<Program, Vec<L<Error>>> {
         Ok(program) if parser.errors.is_empty() => Ok(program),
         _ => Err(parser.errors),
     }
-}
-
-#[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Error {
-    #[error("expected an expression")]
-    ExpectedExpression,
-    #[error("expected an expression atom")]
-    ExpectedExpressionAtom,
-    #[error("left over tokens")]
-    LeftoverSource,
-    #[error("unclosed delimiter")]
-    UnclosedDelimiter,
-    #[error("expected an identifier")]
-    ExpectedIdentifier,
-    #[error("expected a {0}")]
-    ExpectedToken(Token),
-    #[error("empty program")]
-    EmptyCode,
-    #[error("expected a type expression")]
-    ExpectedTypeExpr,
-    #[error("unary operator is missing an operand")]
-    UnaryOperatorMissingOperand,
 }
 
 #[derive(Debug)]
