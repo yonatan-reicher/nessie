@@ -2,7 +2,7 @@
 
 mod string_intern;
 
-use crate::reporting::annotation::{Located, Position, Region, Line};
+use crate::reporting::annotation::{Line, Located, Position, Region};
 use crate::reporting::error::lexer::Error;
 use crate::token::prelude::*;
 use string_intern::StringInterner;
@@ -231,6 +231,7 @@ impl<'source> Lexer<'source> {
         let c = self.current_char()?;
         // advance the indices
         self.position += c.len_utf8();
+        self.line.column += 1;
         if c == '\n' {
             self.line.line += 1;
             self.line.column = 0;
