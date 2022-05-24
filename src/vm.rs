@@ -280,27 +280,28 @@ mod tests {
     }
 
     fn prog(code: &str) -> Chunk {
-        let tokens = crate::lexer::lex(code)
-            .map_err(|e| e.show_spanned_error(code, stdout()))
-            .unwrap();
-        let mut program = crate::parser::parse(&tokens)
-            .map_err(|e| {
-                for e in e {
-                    let _ = e.show_spanned_error(code, stdout());
-                }
-                panic!();
-            })
-            .unwrap();
-        crate::typecheck::Env::new().typecheck(&mut program)
-            .map_err(|e| {
-                for e in e {
-                    let _ = e.show_spanned_error(code, stdout());
-                }
-                panic!();
-            })
-            .unwrap();
-        let chunk = crate::codegen::Compiler::new().compile(&program);
-        chunk
+        // let tokens = crate::lexer::lex(code)
+        //     .map_err(|e| e.show_spanned_error(code, stdout()))
+        //     .unwrap();
+        // let mut program = crate::parser::parse(&tokens)
+        //     .map_err(|e| {
+        //         for e in e {
+        //             let _ = e.show_spanned_error(code, stdout());
+        //         }
+        //         panic!();
+        //     })
+        //     .unwrap();
+        // crate::typecheck::Env::new().typecheck(&mut program)
+        //     .map_err(|e| {
+        //         for e in e {
+        //             let _ = e.show_spanned_error(code, stdout());
+        //         }
+        //         panic!();
+        //     })
+        //     .unwrap();
+        // let chunk = crate::codegen::Compiler::new().compile(&program);
+        // chunk
+        todo!()
     }
 
     #[test]
