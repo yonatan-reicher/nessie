@@ -252,7 +252,8 @@ impl<'source> Lexer<'source> {
             .chars()
             .rev()
             .position(|c| c == '\n')
-            .unwrap_or(slice.len()) as _;
+            .map(|x| x as u16)
+            .unwrap_or(self.line.column + slice.len() as u16);
         slice
     }
 
@@ -409,7 +410,7 @@ mod tests {
             1 + 2 * (3 - 21)
         "})
         .expect("could not lex");
-        assert_ne!(
+        assert_eq!(
             tokens,
             vec![
                 l(0, 0, 0, 1, Token::IntLiteral(1)),
@@ -441,26 +442,37 @@ mod tests {
             l(0, 8, 0, 9, Token::Equal),
             l(0, 10, 0, 11, Token::Identifier("n".into())),
             l(0, 11, 0, 12, Token::Colon),
-            l(0, 13, 0, 14, Token::Identifier("int".into())),
-            l(0, 15, 0, 17, Token::FatArrow),
+            l(0, 13, 0, 16, Token::Identifier("int".into())),
+            l(0, 17, 0, 19, Token::FatArrow),
             l(1, 4, 1, 6, Token::If),
             l(1, 7, 1, 8, Token::Identifier("n".into())),
             l(1, 9, 1, 11, Token::LesserEqual),
             l(1, 12, 1, 13, Token::IntLiteral(1)),
-            l(1, 14, 1, 16, Token::Then),
-            l(1, 17, 1, 18, Token::Identifier("n".into())),
+            l(1, 14, 1, 18, Token::Then),
+            l(1, 19, 1, 20, Token::Identifier("n".into())),
             l(2, 4, 2, 8, Token::Else),
             l(2, 9, 2, 16, Token::Identifier("recurse".into())),
+            l(2, 17, 2, 18, Token::LeftParen),
+            l(2, 18, 2, 19, Token::Identifier("n".into())),
+            l(2, 20, 2, 21, Token::Minus),
+            l(2, 22, 2, 23, Token::IntLiteral(1)),
+            l(2, 23, 2, 24, Token::RightParen),
+            l(2, 25, 2, 26, Token::Plus),
+            l(2, 27, 2, 34, Token::Identifier("recurse".into())),
+            l(2, 35, 2, 36, Token::LeftParen),
+            l(2, 36, 2, 37, Token::Identifier("n".into())),
+            l(2, 38, 2, 39, Token::Minus),
+            l(2, 40, 2, 41, Token::IntLiteral(2)),
+            l(2, 41, 2, 42, Token::RightParen),
+            l(3, 0, 3, 2, Token::In),
+            l(4, 0, 4, 3, Token::Identifier("fib".into())),
+            l(4, 4, 4, 6, Token::IntLiteral(36)),
+            l(4, 7, 4, 9, Token::EqualEqual),
+            l(4, 10, 4, 18, Token::IntLiteral(14930352)),
         ];
         assert_eq!(
-            tokens, expected,
-            indoc! {"
-                actual tokens:
-                {:#?}
-                expected tokens:
-                {:#?}
-            "},
-            tokens, expected,
+            tokens,
+            expected,
         );
     }
 }
