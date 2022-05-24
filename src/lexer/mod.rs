@@ -11,9 +11,9 @@ use string_intern::StringInterner;
 pub struct Lexer<'source> {
     source: &'source str,
     /// The current position of the lexer in the source code.
-    position: usize,
+    index: usize,
     /// The current line of the lexer in the source code.
-    line: Position,
+    position: Position,
     /// A table of interned strings.
     interned_strings: StringInterner,
 }
@@ -59,26 +59,26 @@ impl<'source> Lexer<'source> {
     pub fn new(source: &'source str) -> Lexer<'source> {
         Lexer {
             source,
-            position: 0,
-            line: Position { line: 0, column: 0 },
+            index: 0,
+            position: Position { line: 0, column: 0 },
             interned_strings: StringInterner::new(),
         }
     }
 
     pub fn located<T>(&self, start: Position, value: T) -> Located<T> {
-        let region = Region(start, self.line);
+        let region = Region(start, self.position);
         Located { region, value }
     }
 
     pub fn located_here<T>(&self, value: T) -> Located<T> {
-        let region = Region::point(self.line);
+        let region = Region::point(self.position);
         Located { region, value }
     }
 
     pub fn lex_token(&mut self) -> Result<Option<Located<Token>>, Located<Error>> {
         self.skip_whitespace();
 
-        let start = self.line;
+        let start = self.position;
 
         if let Some(c) = self.current_char() {
             if let Some(integer) = self.advance_int_literal()? {
@@ -120,7 +120,7 @@ impl<'source> Lexer<'source> {
     }
 
     fn advance_escape_char(&mut self) -> Result<Option<char>, Located<Error>> {
-        let start = self.line;
+        let start = self.position;
         expect_char! { self;
             Some('\\') => {
                 expect_char! { self;
@@ -182,7 +182,7 @@ impl<'source> Lexer<'source> {
     fn advance_string_literal(&mut self) -> Result<Option<String>, Located<Error>> {
         if let Some(quote @ ('"' | '\'')) = self.current_char() {
             self.advance_char();
-            let start = self.line;
+            let start = self.position;
             // Advance until we find the closing quote.
             let mut ret = String::new();
             while self.current_char() != Some(quote) {
@@ -200,11 +200,11 @@ impl<'source> Lexer<'source> {
 
     fn advance_int_literal(&mut self) -> Result<Option<i64>, Located<Error>> {
         if let Some('0'..='9') = self.current_char() {
-            let start = self.position;
+            let start = self.index;
             while let Some('0'..='9') = self.current_char() {
                 self.advance_char();
             }
-            let value = self.source[start..self.position].parse().unwrap();
+            let value = self.source[start..self.index].parse().unwrap();
             Ok(Some(value))
         } else {
             Ok(None)
@@ -213,28 +213,28 @@ impl<'source> Lexer<'source> {
 
     fn advance_identifier(&mut self) -> Option<&'source str> {
         if is_ident_start(self.current_char()?) {
-            let start = self.position;
+            let start = self.index;
             while self.current_char().map(is_ident_char).unwrap_or(false) {
                 self.advance_char();
             }
-            Some(&self.source[start..self.position])
+            Some(&self.source[start..self.index])
         } else {
             None
         }
     }
 
     pub fn current_char(&self) -> Option<char> {
-        self.source[self.position..].chars().next()
+        self.source[self.index..].chars().next()
     }
 
     pub fn advance_char(&mut self) -> Option<char> {
         let c = self.current_char()?;
         // advance the indices
-        self.position += c.len_utf8();
-        self.line.column += 1;
+        self.index += c.len_utf8();
+        self.position.column += 1;
         if c == '\n' {
-            self.line.line += 1;
-            self.line.column = 0;
+            self.position.line += 1;
+            self.position.column = 0;
         }
         Some(c)
     }
@@ -242,23 +242,23 @@ impl<'source> Lexer<'source> {
     /// Advances the lexer by the given amount of bytes.
     /// If not enough bytes are available, will return as many as possible.
     pub fn advance_bytes(&mut self, n: usize) -> &str {
-        let slice = &self.source[self.position..][..n];
+        let slice = &self.source[self.index..][..n];
         // note: using slice.len() here instead of n because it's possible that
         // the slice is shorter than n bytes.
-        self.position += slice.len();
+        self.index += slice.len();
         let newline_count = slice.chars().filter(|c| *c == '\n').count();
-        self.line.line += newline_count as Line;
-        self.line.column = slice
+        self.position.line += newline_count as Line;
+        self.position.column = slice
             .chars()
             .rev()
             .position(|c| c == '\n')
             .map(|x| x as u16)
-            .unwrap_or(self.line.column + slice.len() as u16);
+            .unwrap_or(self.position.column + slice.len() as u16);
         slice
     }
 
     pub fn rest(&self) -> &str {
-        &self.source[self.position..]
+        &self.source[self.index..]
     }
 }
 
