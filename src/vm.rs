@@ -265,7 +265,8 @@ impl VM {
 mod tests {
     use super::*;
     use crate::r#type::Type;
-    use std::io::stdout;
+    use crate::reporting::Report;
+    use std::io::{stdout, Write};
     use indoc::indoc;
 
     /// This should be used instead of writing to stdout directly,
@@ -280,28 +281,29 @@ mod tests {
     }
 
     fn prog(code: &str) -> Chunk {
-        // let tokens = crate::lexer::lex(code)
-        //     .map_err(|e| e.show_spanned_error(code, stdout()))
-        //     .unwrap();
-        // let mut program = crate::parser::parse(&tokens)
-        //     .map_err(|e| {
-        //         for e in e {
-        //             let _ = e.show_spanned_error(code, stdout());
-        //         }
-        //         panic!();
-        //     })
-        //     .unwrap();
-        // crate::typecheck::Env::new().typecheck(&mut program)
-        //     .map_err(|e| {
-        //         for e in e {
-        //             let _ = e.show_spanned_error(code, stdout());
-        //         }
-        //         panic!();
-        //     })
-        //     .unwrap();
-        // let chunk = crate::codegen::Compiler::new().compile(&program);
-        // chunk
-        todo!()
+        let tokens = crate::lexer::lex(code)
+            .map_err(|e| {
+                write!(stdout(), "{}", Report::from(e).with_source(code));
+            })
+            .unwrap();
+        let mut program = crate::parser::parse(&tokens)
+            .map_err(|e| {
+                for e in e {
+                    write!(stdout(), "{}", Report::from(e).with_source(code));
+                }
+                panic!();
+            })
+            .unwrap();
+        crate::typecheck::Env::new().typecheck(&mut program)
+            .map_err(|e| {
+                for e in e {
+                    // write!(stdout(), "{}", Report::from(e).with_source(code));
+                }
+                panic!();
+            })
+            .unwrap();
+        let chunk = crate::codegen::Compiler::new().compile(&program);
+        chunk
     }
 
     #[test]

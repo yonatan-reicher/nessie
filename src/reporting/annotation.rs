@@ -1,5 +1,4 @@
-use std::fmt::Debug;
-use std::io::{Result, Write};
+use std::fmt::{Debug, Write, Result};
 
 /// A value `T` which is located at a specific region in the source code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -58,7 +57,7 @@ impl Region {
         )
     }
 
-    pub fn show_region<W: Write>(&self, source: &str, mut f: W) -> Result<()> {
+    pub fn show_region<W: Write>(&self, source: &str, mut f: W) -> Result {
         assert!(self.1.line >= self.0.line);
 
         // Get the lines where the error occoured.
@@ -72,18 +71,18 @@ impl Region {
         // Printing is handled entirely differently for single line errors
         // and multiline errors.
         match &lines[..] {
-            [] => unreachable!(), // because of the + 1
+            [] => todo!(),
             [line] => {
                 let prefix = format!("{} |    ", self.0.line + 1);
                 let n_columns = self.1.column - self.0.column + 1;
-                let start = self.0.column as usize + prefix.len() + 1;
-                writeln!(f, "{} {}", prefix, line)?;
+                let start = self.0.column as usize + prefix.len();
+                writeln!(f, "{}{}", prefix, line)?;
                 write!(f, "{}", " ".repeat(start))?;
                 writeln!(f, "{}", "^".repeat(n_columns as _))?;
             }
             lines => {
                 for (i, line) in lines.iter().enumerate() {
-                    writeln!(f, "{} |>    {}", self.0.line as usize + 1 + i, line)?;
+                    writeln!(f, "{} >|    {}", self.0.line as usize + 1 + i, line)?;
                 }
             }
         }
@@ -115,3 +114,95 @@ impl Ord for Position {
             .then(self.column.cmp(&other.column))
     }
 }
+
+
+#[cfg(test)]
+mod position_tests {
+    use super::*;
+
+    #[test]
+    fn compare_equal_positions() {
+        use std::cmp::Ordering::Equal;
+        let a = Position { line: 4, column: 4 };
+        assert_eq!(a.cmp(&a), Equal);
+    }
+
+    #[test]
+    fn compare_bigger_by_line() {
+        let a = Position { line: 5, column: 7 };
+        let b = Position { line: 3, column: 10 };
+        assert!(a > b);
+    }
+
+    #[test]
+    fn compare_bigger_by_column() {
+        let a = Position { line: 5, column: 4 };
+        let b = Position { line: 5, column: 2 };
+        assert!(a > b);
+    }
+}
+
+#[cfg(test)]
+mod region_tests {
+    use super::*;
+    use indoc::indoc;
+
+    macro_rules! make_show_region_test {
+        ($($name: ident, $expr:expr, $code:expr, $expected:expr),*) => {
+            $(
+                #[test]
+                fn $name() {
+                    let code = $code;
+                    let region = $expr;
+                    let mut buf = String::new();
+                    region.show_region(code, &mut buf).expect("writing error");
+                    assert_eq!(
+                        &buf,
+                        $expected,
+                    );
+                }
+            )*
+        }
+    }
+
+    make_show_region_test! {
+        show_region_single_line,
+        Region(
+            Position { line: 1, column: 2 },
+            Position { line: 1, column: 5 },
+        ),
+        indoc! {"
+            hello
+            world!
+        "},
+        indoc! {"
+            2 |    world!
+                     ^^^^
+        "},
+
+        show_region_multiple_lines,
+        Region(
+            Position { line: 0, column: 2 },
+            Position { line: 1, column: 3 },
+        ),
+        indoc! {"
+            hello
+            world!
+        "},
+        indoc! {"
+            1 >|    hello
+            2 >|    world!
+        "},
+
+        show_region_single_char,
+        Region::point(Position { line: 0, column: 1 }),
+        indoc! {"
+            hey man
+        "},
+        indoc! {"
+            1 |    hey man
+                    ^
+        "}
+    }
+}
+

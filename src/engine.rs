@@ -19,8 +19,7 @@ use crate::vm;
 
 // Errors and reporting.
 use crate::reporting::annotation::Located;
-use crate::reporting::error::{LexError, ParseError};
-use typecheck::Error as TypeError;
+use crate::reporting::error::{LexError, ParseError, TypeError};
 
 // other
 use std::io::{self, Write};
