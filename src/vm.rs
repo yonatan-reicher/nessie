@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_push_constant() {
         let mut chunk = Chunk::new();
-        let num_index = unsafe { chunk.write_constant(Value { int: 1 }, &Type::INT) };
+        let num_index = unsafe { chunk.write_constant(Value { int: 1 }, &Type::Int) };
         chunk.write(I::PrimitiveConstant(num_index), 0);
 
         let mut vm = VM::new();
@@ -324,10 +324,10 @@ mod tests {
         let mut chunk = Chunk::new();
         unsafe {
             *chunk.name_mut() = Some("simple_arithmetic".to_string());
-            let num_1_index = chunk.write_constant(Value { int: 14 }, &Type::INT);
-            let num_2_index = chunk.write_constant(Value { int: 5 }, &Type::INT);
-            let num_3_index = chunk.write_constant(Value { int: 3 }, &Type::INT);
-            let num_4_index = chunk.write_constant(Value { int: 9 }, &Type::INT);
+            let num_1_index = chunk.write_constant(Value { int: 14 }, &Type::Int);
+            let num_2_index = chunk.write_constant(Value { int: 5 }, &Type::Int);
+            let num_3_index = chunk.write_constant(Value { int: 3 }, &Type::Int);
+            let num_4_index = chunk.write_constant(Value { int: 9 }, &Type::Int);
             chunk.write(I::PrimitiveConstant(num_1_index), 110);
             chunk.write(I::PrimitiveConstant(num_2_index), 110);
             chunk.write(I::Add, 111);
