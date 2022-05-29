@@ -2,7 +2,7 @@
 //! like identifiers
 
 use crate::ast::*;
-use crate::r#type::{Type, TypeKind};
+use crate::r#type::Type;
 use crate::reporting::annotation::{Located, Region};
 use crate::reporting::error::TypeError as Error;
 use std::collections::HashMap;
@@ -10,8 +10,6 @@ use std::rc::Rc;
 use vec1::*;
 
 type EKind = ExprKind;
-
-type TKind = TypeKind;
 
 #[derive(Debug, Clone)]
 pub struct Env {
@@ -41,8 +39,8 @@ fn unary_op_types(op: UnaryOp) -> OperatorSignature {
     let f = OperatorSignature::simple;
 
     match op {
-        Neg => f(Type::INT, Type::INT),
-        Not => f(Type::BOOL, Type::BOOL),
+        Neg => f(Type::Int, Type::Int),
+        Not => f(Type::Bool, Type::Bool),
     }
 }
 
@@ -51,21 +49,21 @@ fn binary_op_types(op: BinaryOp) -> OperatorSignature {
     let f = OperatorSignature::simple;
 
     match op {
-        Add => f(Type::INT, Type::INT),
-        Sub => f(Type::INT, Type::INT),
-        Mul => f(Type::INT, Type::INT),
-        Div => f(Type::INT, Type::INT),
-        Mod => f(Type::INT, Type::INT),
-        And => f(Type::BOOL, Type::BOOL),
-        Or => f(Type::BOOL, Type::BOOL),
-        Xor => f(Type::BOOL, Type::BOOL),
-        Lt => f(Type::INT, Type::BOOL),
-        Gt => f(Type::INT, Type::BOOL),
-        Le => f(Type::INT, Type::BOOL),
-        Ge => f(Type::INT, Type::BOOL),
+        Add => f(Type::Int, Type::Int),
+        Sub => f(Type::Int, Type::Int),
+        Mul => f(Type::Int, Type::Int),
+        Div => f(Type::Int, Type::Int),
+        Mod => f(Type::Int, Type::Int),
+        And => f(Type::Bool, Type::Bool),
+        Or => f(Type::Bool, Type::Bool),
+        Xor => f(Type::Bool, Type::Bool),
+        Lt => f(Type::Int, Type::Bool),
+        Gt => f(Type::Int, Type::Bool),
+        Le => f(Type::Int, Type::Bool),
+        Ge => f(Type::Int, Type::Bool),
         Eq => OperatorSignature::Comparison,
         Ne => OperatorSignature::Comparison,
-        Concat => f(Type::STRING, Type::STRING),
+        Concat => f(Type::String, Type::String),
     }
 }
 
@@ -81,9 +79,9 @@ impl Env {
             errors: Vec::new(),
             locals: HashMap::new(),
             type_locals: [
-                (Rc::from("int"), Type::INT),
-                (Rc::from("bool"), Type::BOOL),
-                (Rc::from("string"), Type::STRING),
+                (Rc::from("int"), Type::Int),
+                (Rc::from("bool"), Type::Bool),
+                (Rc::from("string"), Type::String),
             ]
             .iter()
             .cloned()
@@ -111,7 +109,10 @@ impl Env {
             TypeExpr::Function(left, right) => {
                 let left = self.eval_type_expr(left);
                 let right = self.eval_type_expr(right);
-                Ok(Type::function(Rc::new(left?), Rc::new(right?)))
+                Ok(Type::Function {
+                    arg: Rc::new(left?),
+                    ret: Rc::new(right?),
+                })
             }
             TypeExpr::Paren(expr) => self.eval_type_expr(expr),
         }
@@ -146,13 +147,13 @@ impl Env {
     fn visit(&mut self, expr: &mut Expr) -> Result<(), ()> {
         match &mut expr.kind {
             ExprKind::True | ExprKind::False => {
-                expr.ty = Some(Type::BOOL.clone());
+                expr.ty = Some(Type::Bool.clone());
             }
             ExprKind::Int(_) => {
-                expr.ty = Some(Type::INT.clone());
+                expr.ty = Some(Type::Int.clone());
             }
             ExprKind::String(_) => {
-                expr.ty = Some(Type::STRING.clone());
+                expr.ty = Some(Type::String.clone());
             }
             ExprKind::Paren(e) => {
                 self.visit(e)?;
@@ -160,7 +161,7 @@ impl Env {
             }
             ExprKind::Unary(op, e) => match unary_op_types(*op) {
                 OperatorSignature::Comparison => {
-                    expr.ty = Some(Type::BOOL.clone());
+                    expr.ty = Some(Type::Bool.clone());
                     let _ = self.visit(e);
                 }
                 OperatorSignature::Simple { args, ret } => {
@@ -176,7 +177,7 @@ impl Env {
                         let _ = self.expect_visit(r, args);
                     }
                     OperatorSignature::Comparison => {
-                        expr.ty = Some(Type::BOOL.clone());
+                        expr.ty = Some(Type::Bool.clone());
                         // Try visiting the left node and then the right node
                         // If the left node is not infered, then try the right
                         // one and come back to the left one
@@ -218,7 +219,7 @@ impl Env {
                 }
             }
             ExprKind::If { cond, then, else_ } => {
-                let _ = self.expect_visit(cond, Type::BOOL);
+                let _ = self.expect_visit(cond, Type::Bool);
                 self.visit(then)?;
                 self.expect_visit(else_, then.ty.clone().unwrap())?;
                 expr.ty = then.ty.clone();
@@ -252,25 +253,25 @@ impl Env {
                 *recursion_var = Some(self.declare_local(
                     &Rc::from("recurse"),
                     Local {
-                        ty: Type::function(
-                            Rc::new(arg_type.clone().unwrap()),
-                            // Just for now! assume the return type is `int`.
-                            Rc::new(Type::INT.clone()),
-                        ),
+                        ty: Type::Function {
+                            arg: Rc::new(arg_type.clone().unwrap()),
+                            // Just for now! Assume the return type is `int`.
+                            ret: Rc::new(Type::Int.clone()),
+                        },
                     },
                 ));
 
                 self.visit(body)?;
                 self.undeclare_local(arg_name);
-                expr.ty = Some(Type::function(
-                    Rc::new(arg_type.clone().unwrap()),
-                    Rc::new(body.ty.clone().unwrap()),
-                ));
+                expr.ty = Some(Type::Function {
+                    arg: Rc::new(arg_type.clone().unwrap()),
+                    ret: Rc::new(body.ty.clone().unwrap()),
+                });
             }
             EKind::App { func, arg } => {
                 let _ = self.visit(func);
-                match func.ty.as_ref().map(|ty| &ty.kind) {
-                    Some(TKind::Function {
+                match func.ty.as_ref() {
+                    Some(Type::Function {
                         arg: arg_type,
                         ret: ret_type,
                     }) => {

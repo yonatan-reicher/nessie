@@ -79,18 +79,18 @@ impl Value {
     /// # Safety
     /// The type provided must fit the value.
     pub unsafe fn free(mut self, ty: Type) {
-        match ty.kind {
-            TypeKind::Int => {}
-            TypeKind::Bool => {}
-            TypeKind::String => {
+        match ty {
+            Type::Int => {}
+            Type::Bool => {}
+            Type::String => {
                 // uncount the string
                 self.string.dec_ref();
             }
-            TypeKind::ClosureSource => {
+            Type::ClosureSource => {
                 // uncount the closure source
                 self.closure_source.dec_ref();
             }
-            TypeKind::Function { .. } => {
+            Type::Function { .. } => {
                 // uncount the function
                 self.function.dec_ref();
             }

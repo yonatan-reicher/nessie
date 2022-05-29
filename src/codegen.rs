@@ -10,8 +10,6 @@ use vec1::Vec1;
 
 type EKind = ExprKind;
 
-type TKind = TypeKind;
-
 type I = Instruction;
 
 fn unary_op_instruction(op: UnaryOp) -> Instruction {
@@ -23,7 +21,7 @@ fn unary_op_instruction(op: UnaryOp) -> Instruction {
 
 fn binary_op_instruction(op: BinaryOp, arg_type: &Type) -> Instruction {
     type B = BinaryOp;
-    match (op, &arg_type.kind) {
+    match (op, arg_type) {
         (B::Add, _) => I::Add,
         (B::Sub, _) => I::Sub,
         (B::Mul, _) => I::Mul,
@@ -32,20 +30,20 @@ fn binary_op_instruction(op: BinaryOp, arg_type: &Type) -> Instruction {
         (B::Or, _) => I::Or,
         (B::And, _) => I::And,
         (B::Xor, _) => I::Xor,
-        (B::Eq, TKind::Int) => I::IntEq,
-        (B::Eq, TKind::Bool) => I::BoolEq,
-        (B::Eq, TKind::String) => I::StringEq,
-        (B::Eq, TKind::Function { .. }) => todo!("dont allow this"),
-        (B::Ne, TKind::Int) => I::IntNe,
-        (B::Ne, TKind::Bool) => I::BoolNe,
-        (B::Ne, TKind::String) => I::StringNe,
-        (B::Ne, TKind::Function { .. }) => todo!("dont allow this"),
+        (B::Eq, Type::Int) => I::IntEq,
+        (B::Eq, Type::Bool) => I::BoolEq,
+        (B::Eq, Type::String) => I::StringEq,
+        (B::Eq, Type::Function { .. }) => todo!("dont allow this"),
+        (B::Ne, Type::Int) => I::IntNe,
+        (B::Ne, Type::Bool) => I::BoolNe,
+        (B::Ne, Type::String) => I::StringNe,
+        (B::Ne, Type::Function { .. }) => todo!("dont allow this"),
         (B::Lt, _) => I::Lt,
         (B::Le, _) => I::Le,
         (B::Gt, _) => I::Gt,
         (B::Ge, _) => I::Ge,
         (B::Concat, _) => I::Concat,
-        (_, TKind::ClosureSource) => todo!("dont allow this"),
+        (_, Type::ClosureSource) => todo!("dont allow this"),
     }
 }
 
@@ -182,7 +180,7 @@ impl Compiler {
         match &expr.kind {
             &EKind::Int(int) => {
                 let constant = unsafe {
-                    self.chunk_mut().write_constant(Value::new_int(int), &Type::INT)
+                    self.chunk_mut().write_constant(Value::new_int(int), &Type::Int)
                 };
                 self.chunk_mut()
                     .write(I::PrimitiveConstant(constant), expr.span.0.line);
@@ -195,7 +193,7 @@ impl Compiler {
             }
             EKind::String(string) => {
                 let constant = unsafe { 
-                    self.chunk_mut().write_constant(Value::new_string(string), &Type::STRING)
+                    self.chunk_mut().write_constant(Value::new_string(string), &Type::String)
                 };
                 self.chunk_mut()
                     .write(I::PtrConstant(constant), expr.span.0.line);
@@ -338,7 +336,7 @@ impl Compiler {
                         })
                     };
                     let constant = unsafe {
-                        self.chunk_mut().write_constant(value, &Type::CLOSURE_SOURCE)
+                        self.chunk_mut().write_constant(value, &Type::ClosureSource)
                     };
                     self.chunk_mut()
                         .write(I::PtrConstant(constant), expr.span.0.line);

@@ -3,12 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Type {
-    pub kind: TypeKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TypeKind {
+pub enum Type {
     Int,
     Bool,
     String,
@@ -24,9 +19,9 @@ pub enum Category {
     Pointer,
 }
 
-impl Display for TypeKind {
+impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        use TypeKind::*;
+        use Type::*;
         match self {
             Int => write!(f, "int"),
             Bool => write!(f, "bool"),
@@ -37,43 +32,18 @@ impl Display for TypeKind {
     }
 }
 
-impl Display for Type {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
 impl Type {
-    pub const INT: Type = Type {
-        kind: TypeKind::Int,
-    };
-    pub const BOOL: Type = Type {
-        kind: TypeKind::Bool,
-    };
-    pub const STRING: Type = Type {
-        kind: TypeKind::String,
-    };
-    pub const CLOSURE_SOURCE: Type = Type {
-        kind: TypeKind::ClosureSource,
-    };
-
-    pub fn function(arg: Rc<Type>, ret: Rc<Type>) -> Type {
-        Type {
-            kind: TypeKind::Function { arg, ret },
-        }
-    }
-
     pub fn category(&self) -> Category {
-        use TypeKind::*;
-        match &self.kind {
+        use Type::*;
+        match self {
             Int | Bool => Category::Primitive,
             String | ClosureSource | Function { .. } => Category::Pointer,
         }
     }
 
     pub fn drop_above(&self) -> &[Instruction] {
-        use TypeKind::*;
-        match &self.kind {
+        use Type::*;
+        match self {
             Int | Bool => &[Instruction::PrimitiveDropAbove],
             String => &[Instruction::StringDropAbove],
             ClosureSource => &[Instruction::ClosureSourceDropAbove],
@@ -83,5 +53,5 @@ impl Type {
 }
 
 pub mod prelude {
-    pub use super::{Type, TypeKind, Category};
+    pub use super::{Type, Category};
 }

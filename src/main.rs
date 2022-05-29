@@ -1,10 +1,10 @@
 mod cli;
 
-use std::path::Path;
-use std::io::{self, Write, stdin, stdout};
-use std::fs::read_to_string;
 use nessie::Engine;
-use nessie::{Type, Value, NativeFn};
+use nessie::{NativeFn, Type, Value};
+use std::fs::read_to_string;
+use std::io::{self, stdin, stdout, Write};
+use std::path::Path;
 use std::rc::Rc;
 //use nessie::vm::VM;
 //use nessie::lexer::{lex, Error as LexError};
@@ -51,19 +51,24 @@ fn run_file(file_path: &Path) -> io::Result<()> {
     let source = read_to_string(file_path)?;
 
     let mut engine = Engine::new();
- 
+
     // Add some builtins
     engine.declare(
         "print".into(),
-        Type::function(Rc::new(Type::STRING), Rc::new(Type::STRING)),
-        unsafe { Value::new_native_function(NativeFn {
-            name: "print".into(),
-            function: |string_value: Value| {
-                let string = string_value.string.get();
-                println!("{}", string);
-                string_value
-            }
-        }) }
+        Type::Function {
+            arg: Rc::new(Type::String),
+            ret: Rc::new(Type::String),
+        },
+        unsafe {
+            Value::new_native_function(NativeFn {
+                name: "print".into(),
+                function: |string_value: Value| {
+                    let string = string_value.string.get();
+                    println!("{}", string);
+                    string_value
+                },
+            })
+        },
     );
     match engine.typecheck(&source) {
         Ok(program) => {
@@ -81,19 +86,24 @@ fn run_file(file_path: &Path) -> io::Result<()> {
 fn repl() -> io::Result<()> {
     let mut input_buf = String::new();
     let mut engine = Engine::new();
- 
+
     // Add some builtins
     engine.declare(
         "print".into(),
-        Type::function(Rc::new(Type::STRING), Rc::new(Type::STRING)),
-        unsafe { Value::new_native_function(NativeFn {
-            name: "print".into(),
-            function: |string_value: Value| {
-                let string = string_value.string.get();
-                println!("{}", string);
-                string_value
-            }
-        }) }
+        Type::Function {
+            arg: Rc::new(Type::String),
+            ret: Rc::new(Type::String),
+        },
+        unsafe {
+            Value::new_native_function(NativeFn {
+                name: "print".into(),
+                function: |string_value: Value| {
+                    let string = string_value.string.get();
+                    println!("{}", string);
+                    string_value
+                },
+            })
+        },
     );
 
     loop {
@@ -125,19 +135,24 @@ fn disassemble_file(file_path: &Path) -> io::Result<()> {
     let _name = file_path.file_name().unwrap().to_str().unwrap();
     let source = read_to_string(file_path)?;
     let mut engine = Engine::new();
- 
+
     // Add some builtins
     engine.declare(
         "print".into(),
-        Type::function(Rc::new(Type::STRING), Rc::new(Type::STRING)),
-        unsafe { Value::new_native_function(NativeFn {
-            name: "print".into(),
-            function: |string_value: Value| {
-                let string = string_value.string.get();
-                println!("{}", string);
-                string_value
-            }
-        }) }
+        Type::Function {
+            arg: Rc::new(Type::String),
+            ret: Rc::new(Type::String),
+        },
+        unsafe {
+            Value::new_native_function(NativeFn {
+                name: "print".into(),
+                function: |string_value: Value| {
+                    let string = string_value.string.get();
+                    println!("{}", string);
+                    string_value
+                },
+            })
+        },
     );
     match engine.typecheck(&source) {
         Ok(program) => {
@@ -150,4 +165,3 @@ fn disassemble_file(file_path: &Path) -> io::Result<()> {
 
     Ok(())
 }
-
