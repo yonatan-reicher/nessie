@@ -1,10 +1,10 @@
 use crate::reporting::annotation::Region;
-use std::fmt::{self, Display, Formatter, Write};
+use std::fmt::{self, Display, Formatter};
 
 /// An error report.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Report {
-    pub message: &'static str,
+    pub message: String,
     pub region: Region,
     pub notes: Vec<String>,
     pub suggestion: Vec<String>,
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     pub fn simple_report() {
         let report = Report {
-            message: "Something went wrong. :(",
+            message: "Something went wrong. :(".into(),
             region: Region(
                 Position { line: 1, column: 5 },
                 Position { line: 1, column: 7 },

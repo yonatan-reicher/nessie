@@ -1,8 +1,10 @@
 use crate::r#type::Type;
+use crate::reporting::Report;
+use crate::reporting::annotation::Located;
 use std::rc::Rc;
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum Error {
     #[error("type {0} is not a function")]
     NotAFunction(Type),
@@ -16,3 +18,8 @@ pub enum Error {
     UndefinedVariable(Rc<str>),
 }
 
+impl From<&Located<Error>> for Report {
+    fn from(error: &Located<Error>) -> Self {
+        todo!()
+    }
+}

@@ -8,6 +8,7 @@
 use crate::ast::prelude::*;
 use crate::chunk::prelude::*;
 use crate::r#type::prelude::*;
+use crate::reporting::Report;
 use crate::value::prelude::*;
 
 // pipeline stages
@@ -24,11 +25,11 @@ use crate::reporting::error::{LexError, ParseError, TypeError};
 // other
 use std::io::{self, Write};
 use std::rc::Rc;
+use std::fmt::{self, Display, Formatter};
 use std::result;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("{kind}")]
 pub struct Error {
     #[source]
     pub kind: ErrorKind,
@@ -45,6 +46,27 @@ pub enum ErrorKind {
     Parse(Vec<Located<ParseError>>),
     #[error("type checking errors")]
     Typecheck(Vec<Located<TypeError>>),
+}
+
+impl ErrorKind {
+    pub fn reports<'a>(&'a self) -> Box<dyn Iterator<Item=Report> + 'a> {
+        match self {
+            Self::Lex(err) => Box::new(std::iter::once(err.into())),
+            Self::Parse(errors) => Box::new(errors.iter().map(Report::from)),
+            Self::Typecheck(errors) => Box::new(errors.iter().map(Report::from)),
+        }
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let reports = self.kind.reports();
+        writeln!(f, "{}", self.kind)?;
+        for report in reports {
+            writeln!(f, "{}", report.with_source(&self.source))?;
+        }
+        Ok(())
+    }
 }
 
 pub type Result<T> = result::Result<T, Error>;

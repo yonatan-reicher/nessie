@@ -185,12 +185,10 @@ impl VM {
                     }
                 }
             }
-            I::Call => {
-                unsafe {
-                    let value = self.stack.pop().unwrap();
-                    self.run_function(value.function);
-                }
-            }
+            I::Call => unsafe {
+                let value = self.stack.pop().unwrap();
+                self.run_function(value.function);
+            },
             I::Closure(captured_len) => {
                 let mut value = unsafe { self.stack.pop().unwrap().closure_source };
 
@@ -266,8 +264,8 @@ mod tests {
     use super::*;
     use crate::r#type::Type;
     use crate::reporting::Report;
-    use std::io::{stdout, Write};
     use indoc::indoc;
+    use std::io::{stdout, Write};
 
     /// This should be used instead of writing to stdout directly,
     /// because while println! are captured by the test runner,
@@ -283,18 +281,19 @@ mod tests {
     fn prog(code: &str) -> Chunk {
         let tokens = crate::lexer::lex(code)
             .map_err(|e| {
-                write!(stdout(), "{}", Report::from(e).with_source(code));
+                write!(stdout(), "{}", Report::from(&e).with_source(code));
             })
             .unwrap();
         let mut program = crate::parser::parse(&tokens)
             .map_err(|e| {
                 for e in e {
-                    write!(stdout(), "{}", Report::from(e).with_source(code));
+                    write!(stdout(), "{}", Report::from(&e).with_source(code));
                 }
                 panic!();
             })
             .unwrap();
-        crate::typecheck::Env::new().typecheck(&mut program)
+        crate::typecheck::Env::new()
+            .typecheck(&mut program)
             .map_err(|e| {
                 for e in e {
                     // write!(stdout(), "{}", Report::from(e).with_source(code));

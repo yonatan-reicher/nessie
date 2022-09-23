@@ -94,6 +94,7 @@ impl Value {
                 // uncount the function
                 self.function.dec_ref();
             }
+            Type::Constructed(_) => todo!(),
         }
     }
 }

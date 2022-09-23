@@ -14,17 +14,17 @@ pub enum Error {
     InvalidUnicodeEscapeSequence,
 }
 
-impl From<Located<Error>> for Report {
-    fn from(error: Located<Error>) -> Report {
-        match *error {
+impl From<&Located<Error>> for Report {
+    fn from(error: &Located<Error>) -> Report {
+        match **error {
             Error::InvalidCharacter(c) => Report {
-                message: "I found an invalid character while reading the code:",
+                message: "I found an invalid character while reading the code:".into(),
                 region: error.region,
                 notes: vec![format!("Found an invalid character {c}")],
                 suggestion: todo!(),
             },
             Error::UnterminatedString => Report {
-                message: "I found a string that was never ended:",
+                message: "I found a string that was never ended:".into(),
                 region: error.region,
                 notes: vec![format!("Found an `'` or an `\"` that did not have pair to end it")],
                 suggestion: vec![

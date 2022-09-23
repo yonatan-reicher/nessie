@@ -18,7 +18,7 @@ pub struct Env {
     type_locals: HashMap<Rc<str>, Type>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 struct Local {
     ty: Type,
 }

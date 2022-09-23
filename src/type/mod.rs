@@ -1,14 +1,19 @@
+mod constructed;
+
+pub use constructed::{Constructed, ConstructedPtr};
+
 use crate::chunk::Instruction;
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
     Bool,
     String,
     ClosureSource,
     Function { arg: Rc<Type>, ret: Rc<Type> },
+    Constructed(ConstructedPtr),
 }
 
 /// A type can be either a primitive type or a pointer type
@@ -17,6 +22,18 @@ pub enum Type {
 pub enum Category {
     Primitive,
     Pointer,
+}
+
+impl PartialOrd for Type {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering::Equal;
+
+        if self == other {
+            Some(Equal)
+        } else {
+            None
+        }
+    }
 }
 
 impl Display for Type {
@@ -28,6 +45,7 @@ impl Display for Type {
             String => write!(f, "string"),
             ClosureSource => write!(f, "closuresource"),
             Function { arg, ret } => write!(f, "({} -> {})", arg, ret),
+            Constructed(c) => write!(f, "{}", &c.upgrade().ok_or(fmt::Error)?.name),
         }
     }
 }
@@ -37,7 +55,7 @@ impl Type {
         use Type::*;
         match self {
             Int | Bool => Category::Primitive,
-            String | ClosureSource | Function { .. } => Category::Pointer,
+            String | ClosureSource | Function { .. } | Constructed(_) => Category::Pointer,
         }
     }
 
@@ -48,10 +66,21 @@ impl Type {
             String => &[Instruction::StringDropAbove],
             ClosureSource => &[Instruction::ClosureSourceDropAbove],
             Function { .. } => &[Instruction::FunctionDropAbove],
+            Constructed(_) => todo!(),
+        }
+    }
+
+    pub fn curried_function(arguments: &[Type], ret: Type) -> Type {
+        match arguments {
+            [] => ret,
+            [arg0, rest @ ..] => Type::Function {
+                arg: arg0.clone().into(),
+                ret: Self::curried_function(rest, ret).into(),
+            },
         }
     }
 }
 
 pub mod prelude {
-    pub use super::{Type, Category};
+    pub use super::{Category, Type};
 }

@@ -6,12 +6,12 @@ use crate::r#type::Type;
 use crate::reporting::annotation::{Located, Region};
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Program {
     pub body: Expr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Region,
@@ -28,7 +28,7 @@ impl From<Located<ExprKind>> for Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum ExprKind {
     /// An integer literal
     Int(i64),
@@ -72,7 +72,7 @@ pub enum ExprKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct NameDeclaration {
     /// The name of the variable as is written in the source code.
     pub name: Rc<str>,
