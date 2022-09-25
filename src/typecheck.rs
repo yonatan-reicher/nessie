@@ -121,9 +121,9 @@ impl Env {
     pub fn typecheck(&mut self, program: &mut Program) -> Result<(), Vec<Located<Error>>> {
         let _ = self.visit(&mut program.body);
 
-        if program.body.ty.is_none() {
-            self.report_error(program.body.span, Error::ProgramTypeUnknown);
-        }
+        // if program.body.ty.is_none() {
+        //     self.report_error(program.body.span, Error::ProgramTypeUnknown);
+        // }
 
         if self.errors.is_empty() {
             Ok(())

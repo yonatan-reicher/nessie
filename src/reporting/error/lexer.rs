@@ -21,7 +21,7 @@ impl From<&Located<Error>> for Report {
                 message: "I found an invalid character while reading the code:".into(),
                 region: error.region,
                 notes: vec![format!("Found an invalid character {c}")],
-                suggestion: todo!(),
+                suggestion: vec![],
             },
             Error::UnterminatedString => Report {
                 message: "I found a string that was never ended:".into(),
